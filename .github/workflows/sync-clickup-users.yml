@@ -2,7 +2,7 @@ name: Sync ClickUp users
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # every 6 hours
+    - cron: "0 2 * * *" # every 24 hours (02:00 UTC)
   workflow_dispatch: {}
 
 jobs:

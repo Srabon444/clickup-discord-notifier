@@ -1,6 +1,6 @@
 export {};
 
-import { createWebhook } from "../src/lib/clickup-client";
+import { createWebhook } from "../src/lib/clickup-client.ts";
 
 const teamId = process.env.CLICKUP_TEAM_ID;
 const endpoint = process.argv[2];

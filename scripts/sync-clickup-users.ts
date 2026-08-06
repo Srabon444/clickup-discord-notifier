@@ -1,7 +1,7 @@
 export {};
 
-import { getTeamMembers } from "../src/lib/clickup-client";
-import { supabaseServer } from "../src/lib/supabase-server";
+import { getTeamMembers } from "../src/lib/clickup-client.ts";
+import { supabaseServer } from "../src/lib/supabase-server.ts";
 
 const teamId = process.env.CLICKUP_TEAM_ID;
 if (!teamId) {

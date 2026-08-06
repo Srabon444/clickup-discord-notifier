@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ClickUp → Discord Notifier
 
-## Getting Started
+Self-hosted bridge that turns ClickUp task activity into clean, color-coded
+Discord notifications — no Zapier, no Make, no third-party automation
+platform, fully custom code.
 
-First, run the development server:
+**Live:** [clickup-discord-notifier.vercel.app](https://clickup-discord-notifier.vercel.app)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## What it does
+
+- 💬 **New comments** posted to Discord, with real `@mention` pings for
+  anyone tagged in the comment
+- ✅ **Assignments** ping the new assignee directly
+- 🔄 **Status changes** show a color-matched emoji per status (pulled from
+  ClickUp's own status color) and ping the assignee — but only when *someone
+  else* changed it, not when you update your own ticket
+- Every event is logged to a database with delivery status, viewable on a
+  password-protected **dashboard**
+- A scheduled **watchdog** alerts Discord if the ClickUp webhook itself ever
+  goes unhealthy
+
+## How it works
+
+```
+ClickUp workspace ──webhook──▶ Vercel API route ──▶ Discord channel
+                                      │
+                                      ▼
+                                 Supabase (event log)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. ClickUp fires a webhook (HMAC-signed) on comment/assignee/status events.
+2. The API route verifies the signature, looks up the task for context, and
+   builds a Discord embed.
+3. The notification posts to Discord and the event logs to Supabase —
+   whichever happens, so failures are never silent.
+4. A daily job syncs the ClickUp workspace's members into a
+   `clickup_users` table (email ↔ Discord ID), which is how mentions resolve
+   to real pings.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Next.js (App Router, TypeScript)** on **Vercel** — webhook receiver +
+  dashboard, one deployment
+- **Supabase (Postgres)** — event log + ClickUp↔Discord user mapping
+- **Vitest** — unit/integration tests, no real network calls
+- **GitHub Actions** — CI, a daily member-sync cron, and the webhook watchdog
 
-## Learn More
+## Setup
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install
+cp .env.example .env.local   # fill in the values below
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Script | Purpose |
+|---|---|
+| `npm run get-team-id` | find your ClickUp workspace ID |
+| `npm run register-webhook -- <url>` | register the ClickUp webhook |
+| `npm run sync-clickup-users` | pull ClickUp members into Supabase |
+| `npm run check-webhook-health` | manually run the watchdog check |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `.env.example` for the full list of required environment variables and
+`supabase/*.sql` for the database schema.

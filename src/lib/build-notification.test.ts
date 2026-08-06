@@ -7,6 +7,7 @@ import {
   extractMentionedEmails,
   findAddedAssignee,
   findStatusChange,
+  nearestCircleEmoji,
   type ClickupHistoryItem,
 } from "./build-notification";
 
@@ -190,7 +191,7 @@ describe("buildStatusEmbed", () => {
     expect(embed).toEqual({
       title: "🔄 Fix login redirect bug",
       url: "https://app.clickup.com/t/t-1",
-      description: "**John** changed status: To Do → **In Progress**\n\nTicket: `t-1`",
+      description: "**John** changed status: To Do → 🟣 **In Progress**\n\nTicket: `t-1`",
       color: 0x7c4dff,
       timestamp: undefined,
     });
@@ -207,6 +208,22 @@ describe("buildStatusEmbed", () => {
       colorHex: undefined,
     });
     expect(embed.color).toBe(0x99aab5);
+  });
+});
+
+describe("nearestCircleEmoji", () => {
+  test.each([
+    ["#e50000", "🔴"],
+    ["#4194f6", "🔵"],
+    ["#6bc950", "🟢"],
+    ["#ffcc00", "🟡"],
+  ])("maps %s to %s", (hex, expected) => {
+    expect(nearestCircleEmoji(hex)).toBe(expected);
+  });
+
+  test("falls back to white for a missing/invalid hex", () => {
+    expect(nearestCircleEmoji(undefined)).toBe("⚪");
+    expect(nearestCircleEmoji("not-a-color")).toBe("⚪");
   });
 });
 

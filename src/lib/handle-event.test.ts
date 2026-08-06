@@ -245,7 +245,7 @@ describe("handleClickupEvent", () => {
     expect(body.content).toBe("<@777777777777777777>");
     expect(body.embeds[0]).toMatchObject({
       title: "🔄 Fix login redirect bug",
-      description: expect.stringContaining("To Do → **In Progress**"),
+      description: expect.stringContaining("To Do → 🟣 **In Progress**"),
       color: 0x7c4dff,
     });
   });

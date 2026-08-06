@@ -98,6 +98,44 @@ export function hexColorToInt(hex: string | undefined, fallback: number): number
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+// Discord markdown has no background-color text span — a colored circle
+// emoji next to the status name is the closest equivalent to ClickUp's
+// colored status pill. Nearest-match by RGB distance against Discord's
+// fixed set of circle emoji, so any ClickUp status color (not just the ones
+// seen so far) maps to something reasonable.
+const CIRCLE_EMOJI: Array<{ emoji: string; rgb: [number, number, number] }> = [
+  { emoji: "🔴", rgb: [237, 28, 36] },
+  { emoji: "🟠", rgb: [255, 127, 0] },
+  { emoji: "🟡", rgb: [255, 221, 0] },
+  { emoji: "🟢", rgb: [0, 166, 80] },
+  { emoji: "🔵", rgb: [0, 120, 215] },
+  { emoji: "🟣", rgb: [146, 39, 255] },
+  { emoji: "🟤", rgb: [139, 69, 19] },
+  { emoji: "⚫", rgb: [30, 30, 30] },
+  { emoji: "⚪", rgb: [220, 220, 220] },
+];
+
+export function nearestCircleEmoji(hex: string | undefined): string {
+  if (!hex || !/^#?[0-9a-f]{6}$/i.test(hex)) return "⚪";
+  const clean = hex.replace("#", "");
+  const rgb: [number, number, number] = [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ];
+
+  let closest = CIRCLE_EMOJI[0];
+  let closestDistance = Infinity;
+  for (const candidate of CIRCLE_EMOJI) {
+    const distance = candidate.rgb.reduce((sum, c, i) => sum + (c - rgb[i]) ** 2, 0);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closest = candidate;
+    }
+  }
+  return closest.emoji;
+}
+
 export function buildCommentEmbed(params: {
   taskId: string;
   taskName: string | null;
@@ -145,7 +183,7 @@ export function buildStatusEmbed(params: {
   return {
     title: `🔄 ${params.taskName ?? params.taskId}`,
     url: params.taskUrl,
-    description: `**${params.actorUsername}** changed status: ${titleCase(params.fromStatus)} → **${titleCase(params.toStatus)}**${ticketLine(params.taskId)}`,
+    description: `**${params.actorUsername}** changed status: ${titleCase(params.fromStatus)} → ${nearestCircleEmoji(params.colorHex)} **${titleCase(params.toStatus)}**${ticketLine(params.taskId)}`,
     color: hexColorToInt(params.colorHex, EMBED_COLOR.statusFallback),
     timestamp: toTimestamp(params.date),
   };

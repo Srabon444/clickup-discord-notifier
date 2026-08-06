@@ -9,6 +9,7 @@ import {
 } from "./build-notification";
 import type { DiscordEmbed } from "./discord";
 import { supabaseServer } from "./supabase-server";
+import { getDiscordMention } from "./user-mapping";
 
 export async function handleClickupEvent(payload: ClickupWebhookPayload): Promise<void> {
   let taskName: string | null = null;
@@ -25,7 +26,7 @@ export async function handleClickupEvent(payload: ClickupWebhookPayload): Promis
   const embed = buildEmbedForEvent(payload, taskName, taskUrl);
   if (!embed) return;
 
-  const result = await postToDiscord(embed);
+  const result = await postToDiscord(embed, buildMentionContent(payload));
 
   await supabaseServer.from("events").upsert(
     {
@@ -39,6 +40,15 @@ export async function handleClickupEvent(payload: ClickupWebhookPayload): Promis
     },
     { onConflict: "dedupe_key", ignoreDuplicates: true }
   );
+}
+
+// Real @mention/ping — only wired up for assignment for now, since that's
+// the one event with a known recipient without the deferred comment-mention
+// parser (see the TODO below).
+function buildMentionContent(payload: ClickupWebhookPayload): string | undefined {
+  if (payload.event !== "taskAssigneeUpdated") return undefined;
+  const assignee = findAddedAssignee(payload.history_items);
+  return getDiscordMention(assignee?.email) ?? undefined;
 }
 
 function buildEmbedForEvent(

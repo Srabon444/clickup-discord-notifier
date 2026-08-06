@@ -9,7 +9,10 @@ export type DiscordEmbed = {
 
 export type DiscordPostResult = { ok: true } | { ok: false; error: string };
 
-export async function postToDiscord(embed: DiscordEmbed): Promise<DiscordPostResult> {
+export async function postToDiscord(
+  embed: DiscordEmbed,
+  content?: string
+): Promise<DiscordPostResult> {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return { ok: false, error: "Missing DISCORD_WEBHOOK_URL" };
 
@@ -17,7 +20,9 @@ export async function postToDiscord(embed: DiscordEmbed): Promise<DiscordPostRes
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ embeds: [embed] }),
+      // ! A ping only fires from `content` — Discord does not notify on
+      // ! mentions placed inside an embed.
+      body: JSON.stringify(content ? { content, embeds: [embed] } : { embeds: [embed] }),
     });
     if (!res.ok) {
       return { ok: false, error: `Discord responded ${res.status}: ${await res.text()}` };

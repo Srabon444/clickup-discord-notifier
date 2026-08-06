@@ -3,12 +3,73 @@ import {
   buildAssigneeEmbed,
   buildCommentEmbed,
   buildDedupeKey,
+  extractMentionedEmails,
   findAddedAssignee,
   type ClickupHistoryItem,
 } from "./build-notification";
 
 const user = { id: 183, username: "John", email: "john@company.com" };
 const sam = { id: 184, username: "Sam", email: "sam@company.com" };
+
+// Real payload captured from a live ClickUp webhook delivery (see the events
+// table) — a mention is a comment[] item with type "tag" and its own user.
+const realMentionHistoryItem: ClickupHistoryItem = {
+  id: "5205032651904199671",
+  field: "comment",
+  user: { id: 107464442, username: "Ashraful Islam", email: "ashraful.islam@techzu.site" },
+  before: null,
+  after: "90180244600221",
+  comment: {
+    id: "90180244600221",
+    text_content: "@Arabin I am handling this.\n",
+    user: { id: 107464442, username: "Ashraful Islam", email: "ashraful.islam@techzu.site" },
+    comment: [
+      {
+        text: "@Arabin",
+        type: "tag",
+        user: { id: 113454616, username: "Arabin", email: "md.asaduzzaman@techzu.site" },
+      },
+      { text: " I am handling this.", attributes: {} },
+      { text: "\n", attributes: { "block-id": "block-ccTBf8a92n" } },
+    ],
+  },
+};
+
+describe("extractMentionedEmails", () => {
+  test("finds the mentioned user's email from a real comment payload", () => {
+    expect(extractMentionedEmails(realMentionHistoryItem)).toEqual(["md.asaduzzaman@techzu.site"]);
+  });
+
+  test("returns [] for a comment with no mentions", () => {
+    const item: ClickupHistoryItem = {
+      id: "hi-1",
+      field: "comment",
+      user,
+      before: null,
+      after: null,
+      comment: { id: "c-1", text_content: "no mentions here", user, comment: [{ text: "no mentions here" }] },
+    };
+    expect(extractMentionedEmails(item)).toEqual([]);
+  });
+
+  test("dedupes the same person mentioned twice", () => {
+    const tag = { text: "@Arabin", type: "tag", user: { id: 1, username: "Arabin", email: "a@b.com" } };
+    const item: ClickupHistoryItem = {
+      id: "hi-2",
+      field: "comment",
+      user,
+      before: null,
+      after: null,
+      comment: { id: "c-2", text_content: "@Arabin @Arabin", user, comment: [tag, tag] },
+    };
+    expect(extractMentionedEmails(item)).toEqual(["a@b.com"]);
+  });
+
+  test("returns [] when there's no comment on the history item", () => {
+    const item: ClickupHistoryItem = { id: "hi-3", field: "assignee_add", user, before: null, after: null };
+    expect(extractMentionedEmails(item)).toEqual([]);
+  });
+});
 
 describe("buildDedupeKey", () => {
   test("combines webhook_id and the first history item's id", () => {

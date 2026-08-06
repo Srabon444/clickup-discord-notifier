@@ -15,7 +15,10 @@ export type ClickupHistoryItem = {
   comment?: {
     id: string;
     text_content: string;
-    comment: Array<{ text: string; attributes?: Record<string, unknown> }>;
+    // A mention is a comment[] item with type "tag" and its own `user` —
+    // confirmed from a real captured payload (ClickUp doesn't document this
+    // shape publicly).
+    comment: Array<{ text: string; type?: string; attributes?: Record<string, unknown>; user?: ClickupUser }>;
     user: ClickupUser;
   };
 };
@@ -41,6 +44,11 @@ export function findAddedAssignee(historyItems: ClickupHistoryItem[]): ClickupUs
   const addItem = historyItems.find((item) => item.field === "assignee_add");
   if (!addItem || typeof addItem.after !== "object" || addItem.after === null) return null;
   return addItem.after as ClickupUser;
+}
+
+export function extractMentionedEmails(item: ClickupHistoryItem): string[] {
+  const tags = item.comment?.comment.filter((part) => part.type === "tag" && part.user?.email) ?? [];
+  return [...new Set(tags.map((tag) => tag.user!.email))];
 }
 
 const EMBED_COLOR = {

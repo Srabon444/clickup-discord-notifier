@@ -4,6 +4,7 @@ import {
   buildAssigneeEmbed,
   buildCommentEmbed,
   buildDedupeKey,
+  extractMentionedEmails,
   findAddedAssignee,
   type ClickupWebhookPayload,
 } from "./build-notification";
@@ -42,13 +43,22 @@ export async function handleClickupEvent(payload: ClickupWebhookPayload): Promis
   );
 }
 
-// Real @mention/ping — only wired up for assignment for now, since that's
-// the one event with a known recipient without the deferred comment-mention
-// parser (see the TODO below).
 async function buildMentionContent(payload: ClickupWebhookPayload): Promise<string | undefined> {
-  if (payload.event !== "taskAssigneeUpdated") return undefined;
-  const assignee = findAddedAssignee(payload.history_items);
-  return (await getDiscordMention(assignee?.email)) ?? undefined;
+  if (payload.event === "taskAssigneeUpdated") {
+    const assignee = findAddedAssignee(payload.history_items);
+    return (await getDiscordMention(assignee?.email)) ?? undefined;
+  }
+
+  if (payload.event === "taskCommentPosted") {
+    const item = payload.history_items[0];
+    if (!item?.comment) return undefined;
+    const emails = extractMentionedEmails(item);
+    const pings = await Promise.all(emails.map(getDiscordMention));
+    const content = pings.filter((p): p is string => p !== null).join(" ");
+    return content || undefined;
+  }
+
+  return undefined;
 }
 
 function buildEmbedForEvent(
@@ -59,11 +69,6 @@ function buildEmbedForEvent(
   if (payload.event === "taskCommentPosted") {
     const item = payload.history_items[0];
     if (!item?.comment) return null;
-
-    // TODO: mention detection. ClickUp doesn't publicly document the
-    // rich-text attribute a mention uses — this logs the raw shape so the
-    // parser can be written from a real payload instead of a guess.
-    console.log("RAW_COMMENT_PAYLOAD", JSON.stringify(item.comment));
 
     return buildCommentEmbed({
       taskId: payload.task_id,

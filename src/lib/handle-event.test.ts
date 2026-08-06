@@ -39,6 +39,30 @@ const commentPayload = {
   ],
 };
 
+const commentWithMentionPayload = {
+  event: "taskCommentPosted",
+  webhook_id: "wh-1",
+  task_id: "t-1",
+  history_items: [
+    {
+      id: "hi-4",
+      field: "comment",
+      user: johnUser,
+      before: null,
+      after: "c-2",
+      comment: {
+        id: "c-2",
+        text_content: "@Sam can you check this?",
+        user: johnUser,
+        comment: [
+          { text: "@Sam", type: "tag", user: samUser },
+          { text: " can you check this?", attributes: {} },
+        ],
+      },
+    },
+  ],
+};
+
 const assigneeAddPayload = {
   event: "taskAssigneeUpdated",
   webhook_id: "wh-1",
@@ -109,6 +133,27 @@ describe("handleClickupEvent", () => {
       }),
       expect.objectContaining({ onConflict: "dedupe_key" })
     );
+  });
+
+  test("comment posted: no content field when nobody is mentioned", async () => {
+    stubFetch(true);
+    await handleClickupEvent(commentPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.content).toBeUndefined();
+  });
+
+  test("comment posted: pings a mentioned user who is mapped", async () => {
+    stubFetch(true);
+    maybeSingleMock.mockResolvedValue({ data: { discord_user_id: "888888888888888888" } });
+    await handleClickupEvent(commentWithMentionPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.content).toBe("<@888888888888888888>");
   });
 
   test("assignee added: notifies and logs", async () => {

@@ -3,7 +3,13 @@ import * as clickupClient from "./clickup-client";
 
 // ! This is the guardrail from the hard constraint: fails loudly if a future
 // ! change exposes a write/mutate call against tasks, comments, or assignees.
-const ALLOWED_EXPORTS = new Set(["getTask", "createWebhook", "listWebhooks", "deleteWebhook"]);
+const ALLOWED_EXPORTS = new Set([
+  "getTask",
+  "getTeamMembers",
+  "createWebhook",
+  "listWebhooks",
+  "deleteWebhook",
+]);
 const FORBIDDEN_NAME = /(create|update|delete|remove|set)(task|comment|assignee)/i;
 
 describe("clickup-client read-only guard", () => {

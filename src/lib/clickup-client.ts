@@ -20,6 +20,12 @@ export type ClickupWebhook = {
   secret: string;
 };
 
+export type ClickupMember = {
+  id: number;
+  username: string;
+  email: string;
+};
+
 //! The ONLY file allowed to call api.clickup.com. Read-only task lookups plus
 //! webhook management (create/list/delete), scoped only to the /webhook
 //! endpoint — this manages our own subscription, it never touches a task,
@@ -33,6 +39,18 @@ export async function getTask(taskId: string): Promise<ClickupTask> {
     throw new Error(`ClickUp getTask(${taskId}) failed: ${res.status}`);
   }
   return res.json();
+}
+
+export async function getTeamMembers(teamId: string): Promise<ClickupMember[]> {
+  const res = await fetch(`${CLICKUP_API}/team`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(`ClickUp getTeamMembers failed: ${res.status}`);
+  }
+  const body = await res.json();
+  const team = body.teams.find((t: { id: string }) => t.id === teamId);
+  return (team?.members ?? []).map((m: { user: ClickupMember }) => m.user);
 }
 
 export async function createWebhook(

@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "get-team-id": "node --env-file=.env.local scripts/get-team-id.ts",
-    "register-webhook": "node --env-file=.env.local scripts/register-webhook.ts"
+    "register-webhook": "node --env-file=.env.local scripts/register-webhook.ts",
+    "sync-clickup-users": "node --env-file=.env.local scripts/sync-clickup-users.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

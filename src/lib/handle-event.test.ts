@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const upsertMock = vi.fn().mockResolvedValue({ error: null });
-const fromMock = vi.fn(() => ({ upsert: upsertMock }));
+const maybeSingleMock = vi.fn().mockResolvedValue({ data: null });
+const fromMock = vi.fn((table: string) => {
+  if (table === "clickup_users") {
+    return { select: () => ({ eq: () => ({ maybeSingle: maybeSingleMock }) }) };
+  }
+  return { upsert: upsertMock };
+});
 
 vi.mock("./supabase-server", () => ({
   supabaseServer: { from: fromMock },
@@ -69,6 +75,7 @@ function stubFetch(discordOk: boolean) {
 beforeEach(() => {
   upsertMock.mockClear();
   fromMock.mockClear();
+  maybeSingleMock.mockReset().mockResolvedValue({ data: null });
   vi.unstubAllGlobals();
   process.env.CLICKUP_API_TOKEN = "test-token";
   process.env.DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/test";
@@ -114,6 +121,27 @@ describe("handleClickupEvent", () => {
       expect.objectContaining({ event_type: "taskAssigneeUpdated", discord_status: "success" }),
       expect.anything()
     );
+  });
+
+  test("assignee added: pings the mapped Discord user via content", async () => {
+    stubFetch(true);
+    maybeSingleMock.mockResolvedValue({ data: { discord_user_id: "999999999999999999" } });
+    await handleClickupEvent(assigneeAddPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.content).toBe("<@999999999999999999>");
+  });
+
+  test("assignee added: no content field when the assignee isn't mapped", async () => {
+    stubFetch(true);
+    await handleClickupEvent(assigneeAddPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.content).toBeUndefined();
   });
 
   test("assignee removed only: no Discord post, nothing logged (noise reduction)", async () => {

@@ -31,7 +31,11 @@ export async function handleClickupEvent(payload: ClickupWebhookPayload): Promis
   const embed = buildEmbedForEvent(payload, taskName, taskUrl);
   if (!embed) return;
 
-  const result = await postToDiscord(embed, await buildMentionContent(payload, assignees));
+  const result = await postToDiscord(
+    embed,
+    await buildMentionContent(payload, assignees),
+    notifierUsername(payload)
+  );
 
   await supabaseServer.from("events").upsert(
     {
@@ -78,6 +82,21 @@ async function buildMentionContent(
 function joinPings(pings: Array<string | null>): string | undefined {
   const content = pings.filter((p): p is string => p !== null).join(" ");
   return content || undefined;
+}
+
+const EVENT_ICON: Record<string, string> = {
+  taskCommentPosted: "💬",
+  taskAssigneeUpdated: "✅",
+  taskStatusUpdated: "🔄",
+};
+
+// Varying the displayed username per message breaks Discord's grouping (see
+// the note in discord.ts) — ticket + event type differs for almost every
+// real notification, so consecutive messages get their own visual block
+// instead of collapsing into one cramped group.
+function notifierUsername(payload: ClickupWebhookPayload): string {
+  const icon = EVENT_ICON[payload.event] ?? "🔔";
+  return `${icon} ${payload.task_id}`;
 }
 
 function buildEmbedForEvent(

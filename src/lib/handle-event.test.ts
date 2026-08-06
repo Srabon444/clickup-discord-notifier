@@ -171,6 +171,16 @@ describe("handleClickupEvent", () => {
     );
   });
 
+  test("comment posted: username varies by event type + ticket (breaks Discord's message grouping)", async () => {
+    stubFetch(true);
+    await handleClickupEvent(commentPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.username).toBe("💬 t-1");
+  });
+
   test("comment posted: no content field when nobody is mentioned", async () => {
     stubFetch(true);
     await handleClickupEvent(commentPayload as never);

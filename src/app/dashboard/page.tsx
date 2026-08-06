@@ -11,7 +11,19 @@ type EventRow = {
   created_at: string;
 };
 
-const EVENT_TYPES = ["taskCommentPosted", "taskAssigneeUpdated"];
+const EVENT_TYPES = ["taskCommentPosted", "taskAssigneeUpdated", "taskStatusUpdated"];
+
+//! This is a server-rendered page — Date#toLocaleString() without a
+//! timeZone runs in Vercel's server timezone (UTC), not the viewer's browser
+//! timezone. The team is Bangladesh-based, so format explicitly in Asia/Dhaka
+//! instead of silently showing UTC times that don't match anyone's clock.
+function formatDhakaTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "Asia/Dhaka",
+    dateStyle: "medium",
+    timeStyle: "medium",
+  });
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -67,7 +79,7 @@ export default async function DashboardPage({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td>{new Date(row.created_at).toLocaleString()}</td>
+              <td>{formatDhakaTime(row.created_at)}</td>
               <td>{row.event_type}</td>
               <td>{row.task_name ?? row.task_id}</td>
               <td style={{ color: row.discord_status === "success" ? "green" : "crimson" }}>

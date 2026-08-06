@@ -3,8 +3,10 @@ import {
   buildAssigneeEmbed,
   buildCommentEmbed,
   buildDedupeKey,
+  buildStatusEmbed,
   extractMentionedEmails,
   findAddedAssignee,
+  findStatusChange,
   type ClickupHistoryItem,
 } from "./build-notification";
 
@@ -122,12 +124,11 @@ describe("message formatting", () => {
       authorUsername: "John",
     });
     expect(embed).toEqual({
-      title: "Fix login redirect bug",
+      title: "💬 Fix login redirect bug",
       url: "https://app.clickup.com/t/t-1",
-      description: "can we push this today",
+      description: "**John** commented:\n> can we push this today\n\nTicket: `t-1`",
       color: 0x5865f2,
-      author: { name: "💬 John commented" },
-      footer: { text: "Ticket t-1" },
+      timestamp: undefined,
     });
   });
 
@@ -139,9 +140,22 @@ describe("message formatting", () => {
       commentText: "x".repeat(400),
       authorUsername: "John",
     });
-    expect(embed.title).toBe("t-1");
-    expect(embed.description).toHaveLength(300);
-    expect(embed.description.endsWith("…")).toBe(true);
+    expect(embed.title).toBe("💬 t-1");
+    expect(embed.description).toContain("…\n\nTicket: `t-1`");
+    const excerpt = embed.description.split("\n\nTicket:")[0];
+    expect(excerpt).toHaveLength("**John** commented:\n> ".length + 300);
+  });
+
+  test("comment embed converts the ClickUp epoch-ms date to an ISO timestamp", () => {
+    const embed = buildCommentEmbed({
+      taskId: "t-1",
+      taskName: null,
+      taskUrl: "https://app.clickup.com/t/t-1",
+      commentText: "hi",
+      authorUsername: "John",
+      date: "1642737045116",
+    });
+    expect(embed.timestamp).toBe(new Date(1642737045116).toISOString());
   });
 
   test("assignee embed", () => {
@@ -153,12 +167,66 @@ describe("message formatting", () => {
       actorUsername: "John",
     });
     expect(embed).toEqual({
-      title: "Fix login redirect bug",
+      title: "✅ Fix login redirect bug",
       url: "https://app.clickup.com/t/t-1",
-      description: "Assigned to **Sam**",
+      description: "**John** assigned this to **Sam**\n\nTicket: `t-1`",
       color: 0x57f287,
-      author: { name: "✅ John assigned" },
-      footer: { text: "Ticket t-1" },
+      timestamp: undefined,
     });
+  });
+});
+
+describe("buildStatusEmbed", () => {
+  test("uses ClickUp's own status color and title-cases the status names", () => {
+    const embed = buildStatusEmbed({
+      taskId: "t-1",
+      taskName: "Fix login redirect bug",
+      taskUrl: "https://app.clickup.com/t/t-1",
+      actorUsername: "John",
+      fromStatus: "to do",
+      toStatus: "in progress",
+      colorHex: "#7C4DFF",
+    });
+    expect(embed).toEqual({
+      title: "🔄 Fix login redirect bug",
+      url: "https://app.clickup.com/t/t-1",
+      description: "**John** changed status: To Do → **In Progress**\n\nTicket: `t-1`",
+      color: 0x7c4dff,
+      timestamp: undefined,
+    });
+  });
+
+  test("falls back to a neutral color when colorHex is missing/invalid", () => {
+    const embed = buildStatusEmbed({
+      taskId: "t-1",
+      taskName: null,
+      taskUrl: "https://app.clickup.com/t/t-1",
+      actorUsername: "John",
+      fromStatus: "to do",
+      toStatus: "done",
+      colorHex: undefined,
+    });
+    expect(embed.color).toBe(0x99aab5);
+  });
+});
+
+describe("findStatusChange", () => {
+  test("returns actor, from, and to status", () => {
+    const statusItem: ClickupHistoryItem = {
+      id: "hi-5",
+      field: "status",
+      user,
+      before: { status: "to do", color: "#f9d900", type: "open" },
+      after: { status: "in progress", color: "#7C4DFF", type: "custom" },
+    };
+    expect(findStatusChange([statusItem])).toEqual({
+      actor: user,
+      from: { status: "to do", color: "#f9d900", type: "open" },
+      to: { status: "in progress", color: "#7C4DFF", type: "custom" },
+    });
+  });
+
+  test("returns null when there's no status field in history_items", () => {
+    expect(findStatusChange([{ id: "hi-6", field: "comment", user, before: null, after: null }])).toBeNull();
   });
 });

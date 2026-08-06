@@ -17,6 +17,7 @@ if (!endpoint) {
 const webhook = await createWebhook(teamId, endpoint, [
   "taskCommentPosted",
   "taskAssigneeUpdated",
+  "taskStatusUpdated",
 ]);
 
 console.log(`id: ${webhook.id}`);

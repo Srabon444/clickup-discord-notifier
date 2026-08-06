@@ -10,6 +10,7 @@ export type ClickupTask = {
   id: string;
   name: string;
   url: string;
+  assignees: Array<{ id: number; username: string; email: string }>;
 };
 
 export type ClickupWebhook = {
@@ -79,6 +80,23 @@ export async function listWebhooks(teamId: string): Promise<ClickupWebhook[]> {
   }
   const body = await res.json();
   return body.webhooks;
+}
+
+export async function updateWebhook(
+  webhookId: string,
+  endpoint: string,
+  events: string[]
+): Promise<ClickupWebhook> {
+  const res = await fetch(`${CLICKUP_API}/webhook/${webhookId}`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint, events, status: "active" }),
+  });
+  if (!res.ok) {
+    throw new Error(`ClickUp updateWebhook(${webhookId}) failed: ${res.status} ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body.webhook;
 }
 
 export async function deleteWebhook(webhookId: string): Promise<void> {

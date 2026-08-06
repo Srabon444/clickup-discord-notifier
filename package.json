@@ -10,7 +10,8 @@
     "test": "vitest run",
     "get-team-id": "node --env-file=.env.local scripts/get-team-id.ts",
     "register-webhook": "node --env-file=.env.local scripts/register-webhook.ts",
-    "sync-clickup-users": "node --env-file=.env.local scripts/sync-clickup-users.ts"
+    "sync-clickup-users": "node --env-file=.env.local scripts/sync-clickup-users.ts",
+    "check-webhook-health": "node --env-file=.env.local scripts/check-webhook-health.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

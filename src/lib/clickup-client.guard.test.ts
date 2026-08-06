@@ -8,6 +8,7 @@ const ALLOWED_EXPORTS = new Set([
   "getTeamMembers",
   "createWebhook",
   "listWebhooks",
+  "updateWebhook",
   "deleteWebhook",
 ]);
 const FORBIDDEN_NAME = /(create|update|delete|remove|set)(task|comment|assignee)/i;

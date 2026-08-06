@@ -6,12 +6,20 @@ export type ClickupUser = {
   email: string;
 };
 
+export type ClickupStatus = {
+  status: string;
+  color: string;
+  type: string;
+};
+
 export type ClickupHistoryItem = {
   id: string;
   field: string;
   user: ClickupUser;
   before: unknown;
   after: unknown;
+  date?: string; // epoch ms as a string
+
   comment?: {
     id: string;
     text_content: string;
@@ -51,9 +59,18 @@ export function extractMentionedEmails(item: ClickupHistoryItem): string[] {
   return [...new Set(tags.map((tag) => tag.user!.email))];
 }
 
+export function findStatusChange(
+  historyItems: ClickupHistoryItem[]
+): { actor: ClickupUser; from: ClickupStatus; to: ClickupStatus } | null {
+  const item = historyItems.find((i) => i.field === "status");
+  if (!item || typeof item.after !== "object" || item.after === null) return null;
+  return { actor: item.user, from: item.before as ClickupStatus, to: item.after as ClickupStatus };
+}
+
 const EMBED_COLOR = {
   comment: 0x5865f2,
   assignee: 0x57f287,
+  statusFallback: 0x99aab5,
 } as const;
 
 const MAX_DESCRIPTION = 300;
@@ -62,20 +79,39 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+function toTimestamp(dateMs: string | undefined): string | undefined {
+  return dateMs ? new Date(Number(dateMs)).toISOString() : undefined;
+}
+
+function ticketLine(taskId: string): string {
+  return `\n\nTicket: \`${taskId}\``;
+}
+
+function titleCase(text: string): string {
+  return text.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// ClickUp's status color is a "#rrggbb" hex string; Discord embed color is a
+// plain decimal int.
+export function hexColorToInt(hex: string | undefined, fallback: number): number {
+  const parsed = hex ? parseInt(hex.replace("#", ""), 16) : NaN;
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
 export function buildCommentEmbed(params: {
   taskId: string;
   taskName: string | null;
   taskUrl: string;
   commentText: string;
   authorUsername: string;
+  date?: string;
 }): DiscordEmbed {
   return {
-    title: params.taskName ?? params.taskId,
+    title: `💬 ${params.taskName ?? params.taskId}`,
     url: params.taskUrl,
-    description: truncate(params.commentText, MAX_DESCRIPTION),
+    description: `**${params.authorUsername}** commented:\n> ${truncate(params.commentText, MAX_DESCRIPTION)}${ticketLine(params.taskId)}`,
     color: EMBED_COLOR.comment,
-    author: { name: `💬 ${params.authorUsername} commented` },
-    footer: { text: `Ticket ${params.taskId}` },
+    timestamp: toTimestamp(params.date),
   };
 }
 
@@ -85,13 +121,32 @@ export function buildAssigneeEmbed(params: {
   taskUrl: string;
   assigneeUsername: string;
   actorUsername: string;
+  date?: string;
 }): DiscordEmbed {
   return {
-    title: params.taskName ?? params.taskId,
+    title: `✅ ${params.taskName ?? params.taskId}`,
     url: params.taskUrl,
-    description: `Assigned to **${params.assigneeUsername}**`,
+    description: `**${params.actorUsername}** assigned this to **${params.assigneeUsername}**${ticketLine(params.taskId)}`,
     color: EMBED_COLOR.assignee,
-    author: { name: `✅ ${params.actorUsername} assigned` },
-    footer: { text: `Ticket ${params.taskId}` },
+    timestamp: toTimestamp(params.date),
+  };
+}
+
+export function buildStatusEmbed(params: {
+  taskId: string;
+  taskName: string | null;
+  taskUrl: string;
+  actorUsername: string;
+  fromStatus: string;
+  toStatus: string;
+  colorHex: string | undefined;
+  date?: string;
+}): DiscordEmbed {
+  return {
+    title: `🔄 ${params.taskName ?? params.taskId}`,
+    url: params.taskUrl,
+    description: `**${params.actorUsername}** changed status: ${titleCase(params.fromStatus)} → **${titleCase(params.toStatus)}**${ticketLine(params.taskId)}`,
+    color: hexColorToInt(params.colorHex, EMBED_COLOR.statusFallback),
+    timestamp: toTimestamp(params.date),
   };
 }

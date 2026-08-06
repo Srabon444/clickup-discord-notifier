@@ -77,14 +77,52 @@ const assigneeRemovePayload = {
   history_items: [{ id: "hi-3", field: "assignee_remove", user: johnUser, before: samUser, after: null }],
 };
 
-function stubFetch(discordOk: boolean) {
+const statusChangedBySomeoneElsePayload = {
+  event: "taskStatusUpdated",
+  webhook_id: "wh-1",
+  task_id: "t-1",
+  history_items: [
+    {
+      id: "hi-7",
+      field: "status",
+      user: johnUser,
+      before: { status: "to do", color: "#f9d900", type: "open" },
+      after: { status: "in progress", color: "#7C4DFF", type: "custom" },
+    },
+  ],
+};
+
+const statusChangedBySelfPayload = {
+  event: "taskStatusUpdated",
+  webhook_id: "wh-1",
+  task_id: "t-1",
+  history_items: [
+    {
+      id: "hi-8",
+      field: "status",
+      user: samUser,
+      before: { status: "to do", color: "#f9d900", type: "open" },
+      after: { status: "done", color: "#6bc950", type: "closed" },
+    },
+  ],
+};
+
+function stubFetch(
+  discordOk: boolean,
+  assignees: Array<{ id: number; username: string; email: string }> = [johnUser, samUser]
+) {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
       if (url.includes("api.clickup.com")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({ id: "t-1", name: "Fix login redirect bug", url: "https://app.clickup.com/t/t-1" }),
+            JSON.stringify({
+              id: "t-1",
+              name: "Fix login redirect bug",
+              url: "https://app.clickup.com/t/t-1",
+              assignees,
+            }),
             { status: 200 }
           )
         );
@@ -116,11 +154,9 @@ describe("handleClickupEvent", () => {
 
     const body = JSON.parse(discordCall![1].body as string);
     expect(body.embeds[0]).toMatchObject({
-      title: "Fix login redirect bug",
+      title: "💬 Fix login redirect bug",
       url: "https://app.clickup.com/t/t-1",
-      description: "can we push this today\n",
-      author: { name: "💬 John commented" },
-      footer: { text: "Ticket t-1" },
+      description: "**John** commented:\n> can we push this today\n\n\nTicket: `t-1`",
     });
 
     expect(fromMock).toHaveBeenCalledWith("events");
@@ -196,6 +232,34 @@ describe("handleClickupEvent", () => {
     const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
     expect(calls.some((call) => call[0].includes("discord.com"))).toBe(false);
     expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  test("status changed: pings the assignee when someone else changed it", async () => {
+    stubFetch(true, [samUser]); // Sam is the assignee; John (not the assignee) changes status
+    maybeSingleMock.mockResolvedValue({ data: { discord_user_id: "777777777777777777" } });
+    await handleClickupEvent(statusChangedBySomeoneElsePayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.content).toBe("<@777777777777777777>");
+    expect(body.embeds[0]).toMatchObject({
+      title: "🔄 Fix login redirect bug",
+      description: expect.stringContaining("To Do → **In Progress**"),
+      color: 0x7c4dff,
+    });
+  });
+
+  test("status changed: no ping when the assignee changed their own ticket's status", async () => {
+    stubFetch(true, [samUser]); // Sam is the assignee AND the one changing status
+    maybeSingleMock.mockResolvedValue({ data: { discord_user_id: "777777777777777777" } });
+    await handleClickupEvent(statusChangedBySelfPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCall = calls.find((call) => call[0].includes("discord.com"));
+    expect(discordCall).toBeTruthy();
+    const body = JSON.parse(discordCall![1].body as string);
+    expect(body.content).toBeUndefined();
   });
 
   test("Discord failure still logs the event with discord_status=failed", async () => {

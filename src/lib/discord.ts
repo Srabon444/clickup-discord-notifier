@@ -3,8 +3,7 @@ export type DiscordEmbed = {
   url: string;
   description: string;
   color: number;
-  author: { name: string };
-  footer: { text: string };
+  timestamp?: string;
 };
 
 export type DiscordPostResult = { ok: true } | { ok: false; error: string };

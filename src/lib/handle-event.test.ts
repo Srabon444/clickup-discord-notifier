@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const upsertMock = vi.fn().mockResolvedValue({ error: null });
+const insertMock = vi.fn().mockResolvedValue({ error: null });
+const updateEqMock = vi.fn().mockResolvedValue({ error: null });
+const updateMock = vi.fn(() => ({ eq: updateEqMock }));
+const deleteEqMock = vi.fn().mockResolvedValue({ error: null });
+const deleteMock = vi.fn(() => ({ eq: deleteEqMock }));
 const maybeSingleMock = vi.fn().mockResolvedValue({ data: null });
+
 const fromMock = vi.fn((table: string) => {
   if (table === "clickup_users") {
     return { select: () => ({ eq: () => ({ maybeSingle: maybeSingleMock }) }) };
   }
-  return { upsert: upsertMock };
+  return { insert: insertMock, update: updateMock, delete: deleteMock };
 });
 
 vi.mock("./supabase-server", () => ({
@@ -135,7 +140,11 @@ function stubFetch(
 }
 
 beforeEach(() => {
-  upsertMock.mockClear();
+  insertMock.mockClear().mockResolvedValue({ error: null });
+  updateMock.mockClear();
+  updateEqMock.mockClear();
+  deleteMock.mockClear();
+  deleteEqMock.mockClear();
   fromMock.mockClear();
   maybeSingleMock.mockReset().mockResolvedValue({ data: null });
   vi.unstubAllGlobals();
@@ -160,15 +169,22 @@ describe("handleClickupEvent", () => {
     });
 
     expect(fromMock).toHaveBeenCalledWith("events");
-    expect(upsertMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event_type: "taskCommentPosted",
-        task_id: "t-1",
-        dedupe_key: "wh-1:hi-1",
-        discord_status: "success",
-      }),
-      expect.objectContaining({ onConflict: "dedupe_key" })
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: "taskCommentPosted", task_id: "t-1", dedupe_key: "wh-1:hi-1", discord_status: "pending" })
     );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ task_name: "Fix login redirect bug", discord_status: "success" })
+    );
+    expect(updateEqMock).toHaveBeenCalledWith("dedupe_key", "wh-1:hi-1");
+  });
+
+  test("redelivered event (dedupe_key conflict): skips Discord entirely, doesn't call getTask", async () => {
+    stubFetch(true);
+    insertMock.mockResolvedValue({ error: { code: "23505", message: "duplicate key" } });
+    await handleClickupEvent(commentPayload as never);
+
+    expect(fetch as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
   });
 
   test("comment posted: username varies by event type + ticket (breaks Discord's message grouping)", async () => {
@@ -202,15 +218,45 @@ describe("handleClickupEvent", () => {
     expect(body.content).toBe("<@888888888888888888>");
   });
 
+  test("comment with two mentions: one notification pings both mapped users", async () => {
+    stubFetch(true);
+    const twoMentionPayload = {
+      ...commentWithMentionPayload,
+      history_items: [
+        {
+          ...commentWithMentionPayload.history_items[0],
+          comment: {
+            ...commentWithMentionPayload.history_items[0].comment,
+            comment: [
+              { text: "@Sam", type: "tag", user: samUser },
+              { text: " and ", attributes: {} },
+              { text: "@John", type: "tag", user: johnUser },
+              { text: " please check", attributes: {} },
+            ],
+          },
+        },
+      ],
+    };
+    maybeSingleMock
+      .mockResolvedValueOnce({ data: { discord_user_id: "111" } })
+      .mockResolvedValueOnce({ data: { discord_user_id: "222" } });
+    await handleClickupEvent(twoMentionPayload as never);
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
+    const discordCalls = calls.filter((call) => call[0].includes("discord.com"));
+    expect(discordCalls).toHaveLength(1); // one notification, not one per mention
+    const body = JSON.parse(discordCalls[0][1].body as string);
+    expect(body.content).toBe("<@111> <@222>");
+  });
+
   test("assignee added: notifies and logs", async () => {
     stubFetch(true);
     await handleClickupEvent(assigneeAddPayload as never);
 
     const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
     expect(calls.some((call) => call[0].includes("discord.com"))).toBe(true);
-    expect(upsertMock).toHaveBeenCalledWith(
-      expect.objectContaining({ event_type: "taskAssigneeUpdated", discord_status: "success" }),
-      expect.anything()
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ discord_status: "success" })
     );
   });
 
@@ -235,13 +281,14 @@ describe("handleClickupEvent", () => {
     expect(body.content).toBeUndefined();
   });
 
-  test("assignee removed only: no Discord post, nothing logged (noise reduction)", async () => {
+  test("assignee removed only: no Discord post, reserved row is cleaned up", async () => {
     stubFetch(true);
     await handleClickupEvent(assigneeRemovePayload as never);
 
     const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
     expect(calls.some((call) => call[0].includes("discord.com"))).toBe(false);
-    expect(upsertMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(deleteEqMock).toHaveBeenCalledWith("dedupe_key", "wh-1:hi-3");
   });
 
   test("status changed: pings the assignee when someone else changed it", async () => {
@@ -276,9 +323,8 @@ describe("handleClickupEvent", () => {
     stubFetch(false);
     await handleClickupEvent(commentPayload as never);
 
-    expect(upsertMock).toHaveBeenCalledWith(
-      expect.objectContaining({ discord_status: "failed", error_message: expect.stringContaining("500") }),
-      expect.anything()
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ discord_status: "failed", error_message: expect.stringContaining("500") })
     );
   });
 });

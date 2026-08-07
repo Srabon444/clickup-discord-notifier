@@ -15,6 +15,29 @@ import { supabaseServer } from "./supabase-server";
 import { getDiscordMention } from "./user-mapping";
 
 export async function handleClickupEvent(payload: ClickupWebhookPayload): Promise<void> {
+  const dedupeKey = buildDedupeKey(payload);
+
+  //! Reserve the dedupe row BEFORE posting to Discord, not after — ClickUp
+  //! redelivers webhooks on timeout, and checking for duplicates only at
+  //! log time (the old upsert+ignoreDuplicates approach) still sent the
+  //! Discord message twice; only the second *log row* was silently dropped.
+  const { error: insertError } = await supabaseServer.from("events").insert({
+    event_type: payload.event,
+    task_id: payload.task_id,
+    task_name: null,
+    dedupe_key: dedupeKey,
+    raw_payload: payload,
+    discord_status: "pending",
+    error_message: null,
+  });
+
+  if (insertError) {
+    if (insertError.code === "23505") {
+      return; // already handled (or being handled) this exact redelivery
+    }
+    console.error("Failed to reserve dedupe row:", insertError.message);
+  }
+
   let taskName: string | null = null;
   let taskUrl = `https://app.clickup.com/t/${payload.task_id}`;
   let assignees: Array<{ id: number; username: string; email: string }> = [];
@@ -29,7 +52,12 @@ export async function handleClickupEvent(payload: ClickupWebhookPayload): Promis
   }
 
   const embed = buildEmbedForEvent(payload, taskName, taskUrl);
-  if (!embed) return;
+  if (!embed) {
+    // Nothing to notify about (e.g. assignee_remove-only) — drop the
+    // reserved row rather than leaving a permanently "pending" log entry.
+    await supabaseServer.from("events").delete().eq("dedupe_key", dedupeKey);
+    return;
+  }
 
   const result = await postToDiscord(
     embed,
@@ -37,18 +65,14 @@ export async function handleClickupEvent(payload: ClickupWebhookPayload): Promis
     notifierUsername(payload)
   );
 
-  await supabaseServer.from("events").upsert(
-    {
-      event_type: payload.event,
-      task_id: payload.task_id,
+  await supabaseServer
+    .from("events")
+    .update({
       task_name: taskName,
-      dedupe_key: buildDedupeKey(payload),
-      raw_payload: payload,
       discord_status: result.ok ? "success" : "failed",
       error_message: result.ok ? null : result.error,
-    },
-    { onConflict: "dedupe_key", ignoreDuplicates: true }
-  );
+    })
+    .eq("dedupe_key", dedupeKey);
 }
 
 async function buildMentionContent(

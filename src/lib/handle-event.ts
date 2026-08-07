@@ -108,19 +108,13 @@ function joinPings(pings: Array<string | null>): string | undefined {
   return content || undefined;
 }
 
-const EVENT_ICON: Record<string, string> = {
-  taskCommentPosted: "💬",
-  taskAssigneeUpdated: "✅",
-  taskStatusUpdated: "🔄",
-};
-
 // Varying the displayed username per message breaks Discord's grouping (see
-// the note in discord.ts) — ticket + event type differs for almost every
-// real notification, so consecutive messages get their own visual block
-// instead of collapsing into one cramped group.
+// the note in discord.ts) — the ticket id differs for almost every real
+// notification, so consecutive messages get their own visual block instead
+// of collapsing into one cramped group. Keep a real name in front of it —
+// the ticket id alone as the whole bot name reads as broken, not branded.
 function notifierUsername(payload: ClickupWebhookPayload): string {
-  const icon = EVENT_ICON[payload.event] ?? "🔔";
-  return `${icon} ${payload.task_id}`;
+  return `🤖 ClickUp Notifier · ${payload.task_id}`;
 }
 
 function buildEmbedForEvent(

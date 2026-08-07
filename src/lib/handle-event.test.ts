@@ -194,7 +194,7 @@ describe("handleClickupEvent", () => {
     const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][];
     const discordCall = calls.find((call) => call[0].includes("discord.com"));
     const body = JSON.parse(discordCall![1].body as string);
-    expect(body.username).toBe("🤖 ClickUp Notifier · t-1");
+    expect(body.username).toBe("🤖 Clickup-Bot · t-1");
   });
 
   test("comment posted: no content field when nobody is mentioned", async () => {

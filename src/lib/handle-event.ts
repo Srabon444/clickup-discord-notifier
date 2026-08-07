@@ -114,7 +114,7 @@ function joinPings(pings: Array<string | null>): string | undefined {
 // of collapsing into one cramped group. Keep a real name in front of it —
 // the ticket id alone as the whole bot name reads as broken, not branded.
 function notifierUsername(payload: ClickupWebhookPayload): string {
-  return `🤖 ClickUp Notifier · ${payload.task_id}`;
+  return `🤖 Clickup-Bot · ${payload.task_id}`;
 }
 
 function buildEmbedForEvent(

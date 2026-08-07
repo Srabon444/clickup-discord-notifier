@@ -168,7 +168,7 @@ describe("message formatting", () => {
       actorUsername: "John",
     });
     expect(embed).toEqual({
-      title: "✅ Fix login redirect bug",
+      title: "👀 Fix login redirect bug",
       url: "https://app.clickup.com/t/t-1",
       description: "**John** assigned this to **Sam**\n\nTicket: `t-1`",
       color: 0x57f287,
@@ -186,6 +186,7 @@ describe("buildStatusEmbed", () => {
       actorUsername: "John",
       fromStatus: "to do",
       toStatus: "in progress",
+      toType: "custom",
       colorHex: "#7C4DFF",
     });
     expect(embed).toEqual({
@@ -205,9 +206,38 @@ describe("buildStatusEmbed", () => {
       actorUsername: "John",
       fromStatus: "to do",
       toStatus: "done",
+      toType: "closed",
       colorHex: undefined,
     });
     expect(embed.color).toBe(0x99aab5);
+  });
+
+  test("uses the ✅ title icon when the new status type is closed", () => {
+    const embed = buildStatusEmbed({
+      taskId: "t-1",
+      taskName: "Fix login redirect bug",
+      taskUrl: "https://app.clickup.com/t/t-1",
+      actorUsername: "John",
+      fromStatus: "ready for deployment",
+      toStatus: "complete",
+      toType: "closed",
+      colorHex: "#6bc950",
+    });
+    expect(embed.title).toBe("✅ Fix login redirect bug");
+  });
+
+  test("uses the 🔄 title icon for non-closed status types", () => {
+    const embed = buildStatusEmbed({
+      taskId: "t-1",
+      taskName: "Fix login redirect bug",
+      taskUrl: "https://app.clickup.com/t/t-1",
+      actorUsername: "John",
+      fromStatus: "to do",
+      toStatus: "in progress",
+      toType: "custom",
+      colorHex: "#7C4DFF",
+    });
+    expect(embed.title).toBe("🔄 Fix login redirect bug");
   });
 });
 

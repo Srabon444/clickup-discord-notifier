@@ -145,6 +145,7 @@ function buildEmbedForEvent(
       actorUsername: change.actor.username,
       fromStatus: change.from.status,
       toStatus: change.to.status,
+      toType: change.to.type,
       colorHex: change.to.color,
       date: item?.date,
     });

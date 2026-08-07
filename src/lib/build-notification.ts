@@ -162,7 +162,7 @@ export function buildAssigneeEmbed(params: {
   date?: string;
 }): DiscordEmbed {
   return {
-    title: `✅ ${params.taskName ?? params.taskId}`,
+    title: `👀 ${params.taskName ?? params.taskId}`,
     url: params.taskUrl,
     description: `**${params.actorUsername}** assigned this to **${params.assigneeUsername}**${ticketLine(params.taskId)}`,
     color: EMBED_COLOR.assignee,
@@ -177,11 +177,16 @@ export function buildStatusEmbed(params: {
   actorUsername: string;
   fromStatus: string;
   toStatus: string;
+  toType: string;
   colorHex: string | undefined;
   date?: string;
 }): DiscordEmbed {
+  // ClickUp status "type" is "open" | "custom" | "closed" — "closed" is the
+  // terminal/complete status regardless of what a team names it (Done,
+  // Complete, Closed, ...), so match on type rather than the status string.
+  const titleIcon = params.toType === "closed" ? "✅" : "🔄";
   return {
-    title: `🔄 ${params.taskName ?? params.taskId}`,
+    title: `${titleIcon} ${params.taskName ?? params.taskId}`,
     url: params.taskUrl,
     description: `**${params.actorUsername}** changed status: ${titleCase(params.fromStatus)} → ${nearestCircleEmoji(params.colorHex)} **${titleCase(params.toStatus)}**${ticketLine(params.taskId)}`,
     color: hexColorToInt(params.colorHex, EMBED_COLOR.statusFallback),

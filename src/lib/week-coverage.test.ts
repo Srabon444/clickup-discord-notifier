@@ -15,24 +15,27 @@ function epoch(day: string): string {
 }
 
 describe("isActiveStatus", () => {
-  test("matches this workspace's active-work statuses case-insensitively", () => {
+  test("treats most statuses as active", () => {
     expect(isActiveStatus("In Progress")).toBe(true);
     expect(isActiveStatus("fix / amend")).toBe(true);
     expect(isActiveStatus("Inbox")).toBe(true);
     expect(isActiveStatus("To Do")).toBe(true);
+    expect(isActiveStatus("ready for uat")).toBe(true);
+    expect(isActiveStatus("Ready for Deployment")).toBe(true);
+    expect(isActiveStatus("Ready for Review")).toBe(true);
   });
 
-  test("rejects statuses outside the allowlist", () => {
-    expect(isActiveStatus("on hold")).toBe(false);
-    expect(isActiveStatus("ready for uat")).toBe(false);
-    expect(isActiveStatus("ready for review")).toBe(false);
-    expect(isActiveStatus("ready for deployment")).toBe(false);
+  test("rejects the parked/done statuses, case-insensitively", () => {
+    expect(isActiveStatus("Complete")).toBe(false);
+    expect(isActiveStatus("COMPLETE")).toBe(false);
+    expect(isActiveStatus("  complete  ")).toBe(false);
+    expect(isActiveStatus("On Hold")).toBe(false);
   });
 });
 
 describe("taskCoversDay", () => {
   const active = { status: { status: "in progress" } };
-  const inactive = { status: { status: "on hold" } };
+  const inactive = { status: { status: "complete" } };
 
   test("covers every day inside a start/due range", () => {
     const task: CoverageTask = { ...active, start_date: epoch("2026-08-18"), due_date: epoch("2026-08-20") };

@@ -1,14 +1,13 @@
 const DHAKA_TZ = "Asia/Dhaka";
 
-//! Exact literal status strings currently in use in this workspace (captured
-//! from a real GET /team/{id}/task response) — ClickUp's own status "type"
-//! (open/custom/unstarted/done) doesn't line up with what counts as active
-//! work here (e.g. "on hold" is type=unstarted, "ready for uat" is type=done,
-//! neither should count), so this matches on the literal status name.
-const ACTIVE_STATUSES = new Set(["inbox", "to do", "in progress", "fix / amend"]);
+//! Policy: every status counts as active work except these — everything
+//! else (in progress, to do, inbox, fix / amend, ready for uat, ready for
+//! deployment, ready for review, ...) still covers a day; only these are
+//! explicitly parked/done and don't.
+const INACTIVE_STATUSES = new Set(["complete", "on hold"]);
 
 export function isActiveStatus(status: string): boolean {
-  return ACTIVE_STATUSES.has(status.trim().toLowerCase());
+  return !INACTIVE_STATUSES.has(status.trim().toLowerCase());
 }
 
 export type CoverageTask = {

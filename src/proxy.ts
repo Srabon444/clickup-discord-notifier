@@ -1,27 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { verifySessionToken } from "@/lib/session";
 
 //! Next.js 16 renamed middleware.js -> proxy.js; same request-gating role.
-//! Basic Auth is a lightweight gate (the dashboard URL is otherwise public),
-//! not a real secret store — see the env var table in the project spec.
-export function proxy(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  const expectedUser = process.env.DASHBOARD_USERNAME;
+//! Cookie-based session replaces Basic Auth — Basic Auth triggered the
+//! browser's native credential popup on every page load, which read as
+//! broken. A real login page (/) sets this cookie instead; still a
+//! lightweight gate (reuses DASHBOARD_PASSWORD as the HMAC secret, see
+//! lib/session.ts), not a real session store.
+export async function proxy(request: NextRequest) {
   const expectedPass = process.env.DASHBOARD_PASSWORD;
+  const token = request.cookies.get("dashboard_session")?.value;
 
-  if (authHeader?.startsWith("Basic ")) {
-    const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
-    const separatorIndex = decoded.indexOf(":");
-    const user = decoded.slice(0, separatorIndex);
-    const pass = decoded.slice(separatorIndex + 1);
-    if (user === expectedUser && pass === expectedPass) {
-      return NextResponse.next();
-    }
+  if (expectedPass && token && (await verifySessionToken(token, expectedPass))) {
+    return NextResponse.next();
   }
 
-  return new NextResponse("Authentication required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Dashboard"' },
-  });
+  const loginUrl = new URL("/", request.url);
+  loginUrl.searchParams.set("redirect", request.nextUrl.pathname);
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {

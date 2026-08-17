@@ -18,6 +18,13 @@ platform, fully custom code.
   password-protected **dashboard**
 - A scheduled **watchdog** alerts Discord if the ClickUp webhook itself ever
   goes unhealthy
+- Every Friday at 3pm Dhaka time, **Captain Ticket** posts a coverage report
+  to a separate Discord channel: any team member with a gap somewhere in
+  next Monday–Friday (no active ticket's start/due range covering that day)
+  gets @mentioned, with a ✅/❌ per day
+- `/tickets-list` slash command: any linked member can privately (ephemeral)
+  check their own active tickets for the current Mon–Fri, rate-limited to
+  3 uses/day per person — rejected requests never call ClickUp
 
 ## How it works
 
@@ -59,6 +66,26 @@ npm run dev
 | `npm run register-webhook -- <url>` | register the ClickUp webhook |
 | `npm run sync-clickup-users` | pull ClickUp members into Supabase |
 | `npm run check-webhook-health` | manually run the watchdog check |
+| `npm run notify-unassigned-week next` | coverage check for next week (default) |
+| `npm run notify-unassigned-week current` | coverage check for current week |
+| `npm run notify-unassigned-week prev` | coverage check for previous week |
+| `npm run register-slash-command` | register `/tickets-list` with Discord for `DISCORD_GUILD_ID` |
 
 See `.env.example` for the full list of required environment variables and
 `supabase/*.sql` for the database schema.
+
+### Setting up `/tickets-list` (one-time, in the Discord Developer Portal)
+
+1. [discord.com/developers/applications](https://discord.com/developers/applications) →
+   **New Application** → name it "Captain Ticket" (or anything).
+2. **General Information** tab → copy **Application ID** and **Public Key**
+   into `DISCORD_APPLICATION_ID` / `DISCORD_PUBLIC_KEY`.
+3. **Bot** tab → **Reset Token** → copy it into `DISCORD_BOT_TOKEN` (shown once).
+4. **OAuth2 → URL Generator** → scopes: `bot` + `applications.commands` →
+   no bot permissions needed → open the generated URL → pick the server → Authorize.
+5. Enable Developer Mode in Discord (User Settings → Advanced), right-click
+   the server icon → **Copy Server ID** → `DISCORD_GUILD_ID`.
+6. Run `npm run register-slash-command` (registers the command for that server, instant).
+7. **General Information** tab → **Interactions Endpoint URL** →
+   `https://clickup-discord-notifier.vercel.app/api/discord-interactions` →
+   Save (Discord pings it immediately to verify — the route must already be deployed).

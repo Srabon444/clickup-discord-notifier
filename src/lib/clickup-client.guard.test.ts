@@ -6,6 +6,7 @@ import * as clickupClient from "./clickup-client";
 const ALLOWED_EXPORTS = new Set([
   "getTask",
   "getTeamMembers",
+  "getFilteredTeamTasks",
   "createWebhook",
   "listWebhooks",
   "updateWebhook",

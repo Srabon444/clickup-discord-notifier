@@ -1,6 +1,6 @@
 export type DiscordEmbed = {
   title: string;
-  url: string;
+  url?: string;
   description: string;
   color: number;
   timestamp?: string;
@@ -9,11 +9,12 @@ export type DiscordEmbed = {
 export type DiscordPostResult = { ok: true } | { ok: false; error: string };
 
 export async function postToDiscord(
-  embed: DiscordEmbed,
+  embed?: DiscordEmbed,
   content?: string,
-  username?: string
+  username?: string,
+  avatarUrl?: string,
+  webhookUrl: string | undefined = process.env.DISCORD_WEBHOOK_URL
 ): Promise<DiscordPostResult> {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return { ok: false, error: "Missing DISCORD_WEBHOOK_URL" };
 
   try {
@@ -30,7 +31,8 @@ export async function postToDiscord(
       body: JSON.stringify({
         ...(content ? { content } : {}),
         ...(username ? { username } : {}),
-        embeds: [embed],
+        ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+        ...(embed ? { embeds: [embed] } : {}),
       }),
     });
     if (!res.ok) {

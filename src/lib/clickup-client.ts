@@ -27,6 +27,16 @@ export type ClickupMember = {
   email: string;
 };
 
+export type ClickupTaskWithDates = {
+  id: string;
+  name: string;
+  url: string;
+  start_date: string | null;
+  due_date: string | null;
+  status: { status: string; type: string };
+  assignees: Array<{ id: number; username: string; email: string }>;
+};
+
 //! The ONLY file allowed to call api.clickup.com. Read-only task lookups plus
 //! webhook management (create/list/delete), scoped only to the /webhook
 //! endpoint — this manages our own subscription, it never touches a task,
@@ -52,6 +62,41 @@ export async function getTeamMembers(teamId: string): Promise<ClickupMember[]> {
   const body = await res.json();
   const team = body.teams.find((t: { id: string }) => t.id === teamId);
   return (team?.members ?? []).map((m: { user: ClickupMember }) => m.user);
+}
+
+const MAX_PAGES = 50; // 5000 tasks — a sane ceiling, not a real workspace limit
+
+//! ClickUp paginates this endpoint but doesn't return a last_page flag, and
+//! with a multi-value assignees[] filter a page can come back SHORT (e.g.
+//! 84 of 100) without being the last one — verified empirically: page 0 had
+//! 84, page 1 had another 94, page 4 had just 3, page 5 was finally empty.
+//! Stopping at the first short page (the old check) silently dropped ~75%
+//! of real tasks. Only an empty page means done.
+//! Deliberately doesn't filter by due_date_gt/lt: a null due_date behaves
+//! unreliably under those filters, and start_date has no filter at all — so
+//! date-range filtering happens client-side (see week-coverage.ts) against
+//! the full task list.
+export async function getFilteredTeamTasks(
+  teamId: string,
+  assigneeIds: number[]
+): Promise<ClickupTaskWithDates[]> {
+  const tasks: ClickupTaskWithDates[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams({ include_closed: "false", subtasks: "true", page: String(page) });
+    for (const id of assigneeIds) params.append("assignees[]", String(id));
+
+    const res = await fetch(`${CLICKUP_API}/team/${teamId}/task?${params}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`ClickUp getFilteredTeamTasks failed: ${res.status}`);
+    }
+    const body = await res.json();
+    const pageTasks: ClickupTaskWithDates[] = body.tasks ?? [];
+    if (pageTasks.length === 0) break;
+    tasks.push(...pageTasks);
+  }
+  return tasks;
 }
 
 export async function createWebhook(

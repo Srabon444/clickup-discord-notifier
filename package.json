@@ -11,13 +11,16 @@
     "get-team-id": "node --env-file=.env.local scripts/get-team-id.ts",
     "register-webhook": "node --env-file=.env.local scripts/register-webhook.ts",
     "sync-clickup-users": "node --env-file=.env.local scripts/sync-clickup-users.ts",
-    "check-webhook-health": "node --env-file=.env.local scripts/check-webhook-health.ts"
+    "check-webhook-health": "node --env-file=.env.local scripts/check-webhook-health.ts",
+    "notify-unassigned-week": "node --env-file=.env.local scripts/notify-unassigned-week.ts",
+    "register-slash-command": "node --env-file=.env.local scripts/register-slash-command.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
     "next": "16.3.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^20",

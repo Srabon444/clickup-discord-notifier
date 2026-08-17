@@ -24,17 +24,6 @@ export async function POST(req: NextRequest) {
   const timestamp = req.headers.get("x-signature-timestamp");
   const publicKey = process.env.DISCORD_PUBLIC_KEY;
 
-  //! Debug: log Discord's PING request to spot signature mismatch
-  if (signature && timestamp) {
-    console.log("[DISCORD PING]", {
-      sig: signature?.slice(0, 20),
-      ts: timestamp,
-      pubkey: publicKey?.slice(0, 20),
-      bodyLen: rawBody.length,
-      bodyStart: rawBody.slice(0, 50),
-    });
-  }
-
   if (!publicKey || !verifyDiscordSignature(rawBody, signature, timestamp, publicKey)) {
     return new NextResponse("invalid signature", { status: 401 });
   }

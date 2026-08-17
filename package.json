@@ -13,6 +13,9 @@
     "sync-clickup-users": "node --env-file=.env.local scripts/sync-clickup-users.ts",
     "check-webhook-health": "node --env-file=.env.local scripts/check-webhook-health.ts",
     "notify-unassigned-week": "node --env-file=.env.local scripts/notify-unassigned-week.ts",
+    "notify-next-week": "node --env-file=.env.local scripts/notify-unassigned-week.ts next",
+    "notify-current-week": "node --env-file=.env.local scripts/notify-unassigned-week.ts current",
+    "notify-prev-week": "node --env-file=.env.local scripts/notify-unassigned-week.ts prev",
     "register-slash-command": "node --env-file=.env.local scripts/register-slash-command.ts"
   },
   "dependencies": {

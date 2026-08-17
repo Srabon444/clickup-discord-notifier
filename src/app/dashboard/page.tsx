@@ -1,4 +1,5 @@
 import { supabaseServer } from "@/lib/supabase-server";
+import { LogoutButton } from "./logout-button";
 import { TriggerButtons } from "./trigger-buttons";
 
 type EventRow = {
@@ -44,7 +45,10 @@ export default async function DashboardPage({
 
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-      <h1>ClickUp → Discord notification log</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>ClickUp → Discord notification log</h1>
+        <LogoutButton />
+      </div>
 
       <TriggerButtons />
 

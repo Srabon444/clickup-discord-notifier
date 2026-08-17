@@ -1,6 +1,6 @@
 import { supabaseServer } from "./supabase-server";
 
-const DAILY_LIMIT = 3;
+const DAILY_LIMIT = 5;
 const DHAKA_TZ = "Asia/Dhaka";
 
 export type UsageResult = { allowed: boolean; count: number };

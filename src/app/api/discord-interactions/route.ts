@@ -63,7 +63,7 @@ async function handleTicketsList(interaction: DiscordInteraction) {
   }
   //! Rejected here, before any ClickUp call — a spammer never costs an API call.
   if (!usage.allowed) {
-    return ephemeral("⏳ You've hit today's limit (5/day) for this command. Try again tomorrow.");
+    return ephemeral("⏳ You've hit today's limit (10/day) for this command. Try again tomorrow.");
   }
 
   const teamId = process.env.CLICKUP_TEAM_ID;

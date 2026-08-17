@@ -18,6 +18,7 @@ export async function postToDiscord(
   if (!webhookUrl) return { ok: false, error: "Missing DISCORD_WEBHOOK_URL" };
 
   try {
+    console.log("[DISCORD] POST to", webhookUrl?.substring(0, 50) + "...");
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,8 +36,11 @@ export async function postToDiscord(
         ...(embed ? { embeds: [embed] } : {}),
       }),
     });
+    console.log("[DISCORD] Response:", res.status);
     if (!res.ok) {
-      return { ok: false, error: `Discord responded ${res.status}: ${await res.text()}` };
+      const text = await res.text();
+      console.log("[DISCORD] Error body:", text);
+      return { ok: false, error: `Discord responded ${res.status}: ${text}` };
     }
     return { ok: true };
   } catch (err) {

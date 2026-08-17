@@ -72,7 +72,9 @@ export async function triggerNotification(
     const header = `🗓️ **${directionLabel}'s ticket coverage — ${rangeLabel}**\n\n${LEGEND}`;
     const body = sorted.map((c) => `<@${c.discordUserId}>\n${formatDayLines(c.days)}`).join("\n\n");
 
+    console.log("[NOTIFY] Posting to webhook:", webhookUrl?.substring(0, 50) + "...");
     const result = await postToDiscord(undefined, `${header}\n\n${body}`, BOT_USERNAME, BOT_AVATAR_URL, webhookUrl);
+    console.log("[NOTIFY] Result:", result);
 
     if (!result.ok) {
       return { success: false, message: `Failed to post to Discord: ${result.error}`, membersShown: sorted.length, membersWithGap: 0 };

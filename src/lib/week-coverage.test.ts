@@ -6,6 +6,7 @@ import {
   isActiveStatus,
   nextWeekdays,
   taskCoversDay,
+  taskCoversDayForReport,
   tasksCoveringWeek,
   type CoverageTask,
 } from "./week-coverage";
@@ -64,6 +65,43 @@ describe("taskCoversDay", () => {
 
   test("no dates at all never covers", () => {
     expect(taskCoversDay({ ...active, start_date: null, due_date: null }, "2026-08-19")).toBe(false);
+  });
+});
+
+describe("taskCoversDayForReport", () => {
+  const complete = { status: { status: "complete" } };
+  const onHold = { status: { status: "on hold" } };
+  const active = { status: { status: "in progress" } };
+
+  test("complete ticket covers today and earlier days in range", () => {
+    const task: CoverageTask = { ...complete, start_date: epoch("2026-08-18"), due_date: epoch("2026-08-20") };
+    const now = new Date("2026-08-20T10:00:00Z"); // today = 2026-08-20 in Asia/Dhaka
+    expect(taskCoversDayForReport(task, "2026-08-19", now)).toBe(true);
+    expect(taskCoversDayForReport(task, "2026-08-20", now)).toBe(true);
+  });
+
+  test("complete ticket does not cover a future day", () => {
+    const task: CoverageTask = { ...complete, start_date: epoch("2026-08-18"), due_date: epoch("2026-08-21") };
+    const now = new Date("2026-08-20T10:00:00Z");
+    expect(taskCoversDayForReport(task, "2026-08-21", now)).toBe(false);
+  });
+
+  test("on hold never covers, regardless of date", () => {
+    const task: CoverageTask = { ...onHold, start_date: epoch("2026-08-18"), due_date: epoch("2026-08-20") };
+    const now = new Date("2026-08-25T10:00:00Z");
+    expect(taskCoversDayForReport(task, "2026-08-19", now)).toBe(false);
+  });
+
+  test("active status covers regardless of date, same as taskCoversDay", () => {
+    const task: CoverageTask = { ...active, start_date: epoch("2026-08-18"), due_date: epoch("2026-08-20") };
+    const now = new Date("2026-08-14T10:00:00Z"); // before the range entirely
+    expect(taskCoversDayForReport(task, "2026-08-19", now)).toBe(true);
+  });
+
+  test("out-of-range day never covers, even for a past complete ticket", () => {
+    const task: CoverageTask = { ...complete, start_date: epoch("2026-08-18"), due_date: epoch("2026-08-20") };
+    const now = new Date("2026-08-25T10:00:00Z");
+    expect(taskCoversDayForReport(task, "2026-08-21", now)).toBe(false);
   });
 });
 
@@ -129,6 +167,16 @@ describe("buildMemberCoverage / formatDayLines", () => {
     const coverage = buildMemberCoverage({ username: "sam", discordUserId: "999" }, tasks, weekdays);
     expect(coverage.username).toBe("sam");
     expect(coverage.discordUserId).toBe("999");
+    expect(formatDayLines(coverage.days)).toBe("Mon ✅  ·  Tue ✅  ·  Wed ✅  ·  Thu ❌  ·  Fri ❌");
+  });
+
+  test("marks a completed ticket covered only for today-or-earlier days", () => {
+    const now = new Date("2026-08-19T10:00:00Z"); // today = Wed 2026-08-19 in Asia/Dhaka
+    const weekOf = currentWeekdays(now);
+    const tasks: CoverageTask[] = [
+      { status: { status: "complete" }, start_date: epoch("2026-08-17"), due_date: epoch("2026-08-21") },
+    ];
+    const coverage = buildMemberCoverage({ username: "sam", discordUserId: "999" }, tasks, weekOf, now);
     expect(formatDayLines(coverage.days)).toBe("Mon ✅  ·  Tue ✅  ·  Wed ✅  ·  Thu ❌  ·  Fri ❌");
   });
 });

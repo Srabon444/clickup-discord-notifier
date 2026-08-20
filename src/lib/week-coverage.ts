@@ -23,14 +23,29 @@ function epochToDhakaDate(epochMs: string): string {
 //! A task with only one of start_date/due_date covers just that single
 //! calendar day — the one concrete date it actually has — never an
 //! open-ended range in either direction.
-export function taskCoversDay(task: CoverageTask, day: string): boolean {
-  if (!isActiveStatus(task.status.status)) return false;
+function inDateRange(task: CoverageTask, day: string): boolean {
   const start = task.start_date ? epochToDhakaDate(task.start_date) : null;
   const due = task.due_date ? epochToDhakaDate(task.due_date) : null;
   if (start && due) return start <= day && day <= due;
   if (due) return day === due;
   if (start) return day === start;
   return false;
+}
+
+export function taskCoversDay(task: CoverageTask, day: string): boolean {
+  if (!isActiveStatus(task.status.status)) return false;
+  return inDateRange(task, day);
+}
+
+//! Weekly coverage report only — /tickets-list still uses taskCoversDay's
+//! blanket complete-exclusion untouched. Here a complete ticket still counts
+//! as covered for today-or-earlier days (the work happened); only a complete
+//! ticket sitting on a future day means nothing's really scheduled that day.
+export function taskCoversDayForReport(task: CoverageTask, day: string, now: Date = new Date()): boolean {
+  if (!inDateRange(task, day)) return false;
+  const status = task.status.status.trim().toLowerCase();
+  if (status === "complete") return day <= new Intl.DateTimeFormat("en-CA", { timeZone: DHAKA_TZ }).format(now);
+  return isActiveStatus(status);
 }
 
 export type Weekday = { date: string; label: string };
@@ -100,7 +115,8 @@ export type MemberCoverage = {
 export function buildMemberCoverage(
   member: { username: string; discordUserId: string },
   tasks: CoverageTask[],
-  weekdays: Weekday[]
+  weekdays: Weekday[],
+  now: Date = new Date()
 ): MemberCoverage {
   return {
     username: member.username,
@@ -108,7 +124,7 @@ export function buildMemberCoverage(
     days: weekdays.map((w) => ({
       label: w.label,
       date: w.date,
-      covered: tasks.some((t) => taskCoversDay(t, w.date)),
+      covered: tasks.some((t) => taskCoversDayForReport(t, w.date, now)),
     })),
   };
 }

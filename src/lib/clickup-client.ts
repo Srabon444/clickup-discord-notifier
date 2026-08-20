@@ -82,7 +82,12 @@ export async function getFilteredTeamTasks(
 ): Promise<ClickupTaskWithDates[]> {
   const tasks: ClickupTaskWithDates[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const params = new URLSearchParams({ include_closed: "false", subtasks: "true", page: String(page) });
+    //! include_closed must be true — ClickUp's "closed" tasks are exactly the
+    //! complete/done ones, and the weekly report needs those fetched so a
+    //! complete ticket can still count as covered for today-or-earlier days
+    //! (see taskCoversDayForReport in week-coverage.ts). "false" here silently
+    //! dropped every complete ticket before that logic ever saw it.
+    const params = new URLSearchParams({ include_closed: "true", subtasks: "true", page: String(page) });
     for (const id of assigneeIds) params.append("assignees[]", String(id));
 
     const res = await fetch(`${CLICKUP_API}/team/${teamId}/task?${params}`, {

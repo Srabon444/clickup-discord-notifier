@@ -3,8 +3,10 @@ import {
   buildMemberCoverage,
   currentWeekdays,
   formatDayLines,
+  formatTicketLine,
   isActiveStatus,
   nextWeekdays,
+  sortTicketsByDate,
   taskCoversDay,
   taskCoversDayForReport,
   tasksCoveringWeek,
@@ -178,5 +180,52 @@ describe("buildMemberCoverage / formatDayLines", () => {
     ];
     const coverage = buildMemberCoverage({ username: "sam", discordUserId: "999" }, tasks, weekOf, now);
     expect(formatDayLines(coverage.days)).toBe("Mon ✅  ·  Tue ✅  ·  Wed ✅  ·  Thu ❌  ·  Fri ❌");
+  });
+});
+
+describe("sortTicketsByDate", () => {
+  test("sorts dated tickets ascending by start_date, due_date as fallback key", () => {
+    const c = epoch("2026-08-19");
+    const a = epoch("2026-08-17");
+    const b = epoch("2026-08-18");
+    const tickets = [
+      { name: "C", url: "u", start_date: c, due_date: null },
+      { name: "A", url: "u", start_date: a, due_date: null },
+      { name: "B (due only)", url: "u", start_date: null, due_date: b },
+    ];
+    expect(sortTicketsByDate(tickets).map((t) => t.name)).toEqual(["A", "B (due only)", "C"]);
+  });
+
+  test("sinks undated tickets to the bottom, after every dated ticket", () => {
+    const tickets = [
+      { name: "no date", url: "u", start_date: null, due_date: null },
+      { name: "dated", url: "u", start_date: epoch("2026-08-17"), due_date: null },
+    ];
+    expect(sortTicketsByDate(tickets).map((t) => t.name)).toEqual(["dated", "no date"]);
+  });
+});
+
+describe("formatTicketLine", () => {
+  test("shows a start→due range when both dates are present", () => {
+    const line = formatTicketLine({
+      name: "Fix bug",
+      url: "https://app.clickup.com/t/1",
+      start_date: epoch("2026-08-17"),
+      due_date: epoch("2026-08-19"),
+    });
+    expect(line).toBe("• **Fix bug** — https://app.clickup.com/t/1 (2026-08-17 → 2026-08-19)");
+  });
+
+  test("shows just the one date when only one is set", () => {
+    expect(
+      formatTicketLine({ name: "T", url: "u", start_date: epoch("2026-08-17"), due_date: null })
+    ).toBe("• **T** — u (from 2026-08-17)");
+    expect(
+      formatTicketLine({ name: "T", url: "u", start_date: null, due_date: epoch("2026-08-19") })
+    ).toBe("• **T** — u (due 2026-08-19)");
+  });
+
+  test("omits the date suffix entirely when neither is set", () => {
+    expect(formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null })).toBe("• **T** — u");
   });
 });

@@ -9,22 +9,25 @@ if (!appId || !guildId || !botToken) {
   process.exit(1);
 }
 
+const commands = [
+  { name: "tickets-list", description: "See your active tickets for this week (Mon-Fri)", type: 1 },
+  { name: "tickets-all", description: "See all your active tickets, dated or not", type: 1 },
+];
+
 //! Guild-scoped (not global) registration — propagates instantly, global
 //! commands can take up to an hour to show up.
-const res = await fetch(`https://discord.com/api/v10/applications/${appId}/guilds/${guildId}/commands`, {
-  method: "POST",
-  headers: { Authorization: `Bot ${botToken}`, "Content-Type": "application/json" },
-  body: JSON.stringify({
-    name: "tickets-list",
-    description: "See your active tickets for this week (Mon-Fri)",
-    type: 1,
-  }),
-});
+for (const command of commands) {
+  const res = await fetch(`https://discord.com/api/v10/applications/${appId}/guilds/${guildId}/commands`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${botToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(command),
+  });
 
-if (!res.ok) {
-  console.error(`Failed to register command: ${res.status} ${await res.text()}`);
-  process.exit(1);
+  if (!res.ok) {
+    console.error(`Failed to register command ${command.name}: ${res.status} ${await res.text()}`);
+    process.exit(1);
+  }
+
+  const registered = await res.json();
+  console.log(`Registered /${registered.name} (id: ${registered.id}) for guild ${guildId}`);
 }
-
-const command = await res.json();
-console.log(`Registered /${command.name} (id: ${command.id}) for guild ${guildId}`);

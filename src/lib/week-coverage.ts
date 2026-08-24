@@ -139,3 +139,27 @@ export function formatDayLines(days: MemberCoverage["days"]): string {
 export function tasksCoveringWeek<T extends CoverageTask>(tasks: T[], weekdays: Weekday[]): T[] {
   return tasks.filter((t) => weekdays.some((w) => taskCoversDay(t, w.date)));
 }
+
+export type TicketDisplay = {
+  name: string;
+  url: string;
+  start_date: string | null;
+  due_date: string | null;
+};
+
+//! Sorted by start_date; a task with only a due_date sorts by that instead
+//! (its due date is the only date it has). A task with neither date sinks to
+//! the bottom, unordered among the rest of the undated tickets.
+export function sortTicketsByDate<T extends TicketDisplay>(tickets: T[]): T[] {
+  const sortKey = (t: T) => t.start_date ?? t.due_date;
+  const dated = tickets.filter((t) => sortKey(t) !== null).sort((a, b) => Number(sortKey(a)) - Number(sortKey(b)));
+  const undated = tickets.filter((t) => sortKey(t) === null);
+  return [...dated, ...undated];
+}
+
+export function formatTicketLine(t: TicketDisplay): string {
+  const start = t.start_date ? epochToDhakaDate(t.start_date) : null;
+  const due = t.due_date ? epochToDhakaDate(t.due_date) : null;
+  const dates = start && due ? `${start} → ${due}` : start ? `from ${start}` : due ? `due ${due}` : null;
+  return dates ? `• **${t.name}** — ${t.url} (${dates})` : `• **${t.name}** — ${t.url}`;
+}

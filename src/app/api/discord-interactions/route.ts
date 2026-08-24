@@ -3,9 +3,10 @@ import { getFilteredTeamTasks } from "@/lib/clickup-client";
 import { verifyDiscordSignature } from "@/lib/discord-verify";
 import { checkAndIncrementUsage } from "@/lib/rate-limit";
 import { supabaseServer } from "@/lib/supabase-server";
-import { currentWeekdays, tasksCoveringWeek } from "@/lib/week-coverage";
+import { currentWeekdays, formatTicketLine, isActiveStatus, sortTicketsByDate, tasksCoveringWeek } from "@/lib/week-coverage";
 
 const COMMAND_NAME = "tickets-list";
+const COMMAND_NAME_ALL = "tickets-all";
 
 type DiscordInteraction = {
   type: number;
@@ -56,14 +57,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: 5, data: { flags: 64 } });
   }
 
+  if (interaction.type === 2 && interaction.data?.name === COMMAND_NAME_ALL) {
+    after(() => resolveTicketsAll(interaction));
+    return NextResponse.json({ type: 5, data: { flags: 64 } });
+  }
+
   return ephemeral("Unknown command.");
 }
 
-async function resolveTicketsList(interaction: DiscordInteraction) {
-  const reply = (content: string) => editDeferredReply(interaction.token, content);
+type ResolvedCaller = { clickupUserId: number; teamId: string };
 
+//! Shared by both commands: identify the caller, enforce the daily usage
+//! cap, and check server config — before either command touches ClickUp.
+async function resolveCaller(interaction: DiscordInteraction): Promise<ResolvedCaller | string> {
   const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
-  if (!discordUserId) return reply("Couldn't identify you — try again.");
+  if (!discordUserId) return "Couldn't identify you — try again.";
 
   const { data: mapping } = await supabaseServer
     .from("clickup_users")
@@ -72,30 +80,39 @@ async function resolveTicketsList(interaction: DiscordInteraction) {
     .maybeSingle();
 
   if (!mapping) {
-    return reply("Your Discord account isn't linked to a ClickUp account. Ask an admin to set up the mapping.");
+    return "Your Discord account isn't linked to a ClickUp account. Ask an admin to set up the mapping.";
   }
 
   let usage;
   try {
     usage = await checkAndIncrementUsage(discordUserId);
   } catch {
-    return reply("Something went wrong checking your usage limit. Try again shortly.");
+    return "Something went wrong checking your usage limit. Try again shortly.";
   }
   //! Rejected here, before any ClickUp call — a spammer never costs an API call.
   if (!usage.allowed) {
-    return reply("⏳ You've hit today's limit (10/day) for this command. Try again tomorrow.");
+    return "⏳ You've hit today's limit (10/day) for this command. Try again tomorrow.";
   }
 
   const teamId = process.env.CLICKUP_TEAM_ID;
-  if (!teamId) return reply("Server misconfiguration — missing CLICKUP_TEAM_ID.");
+  if (!teamId) return "Server misconfiguration — missing CLICKUP_TEAM_ID.";
+
+  return { clickupUserId: Number(mapping.clickup_user_id), teamId };
+}
+
+async function resolveTicketsList(interaction: DiscordInteraction) {
+  const reply = (content: string) => editDeferredReply(interaction.token, content);
+
+  const caller = await resolveCaller(interaction);
+  if (typeof caller === "string") return reply(caller);
 
   const weekdays = currentWeekdays();
   const rangeLabel = `${weekdays[0].date} – ${weekdays[4].date}`;
 
   let tickets;
   try {
-    const tasks = await getFilteredTeamTasks(teamId, [Number(mapping.clickup_user_id)]);
-    tickets = tasksCoveringWeek(tasks, weekdays);
+    const tasks = await getFilteredTeamTasks(caller.teamId, [caller.clickupUserId]);
+    tickets = sortTicketsByDate(tasksCoveringWeek(tasks, weekdays));
   } catch {
     return reply("Couldn't reach ClickUp right now. Try again shortly.");
   }
@@ -104,6 +121,30 @@ async function resolveTicketsList(interaction: DiscordInteraction) {
     return reply(`📋 **Your tickets this week (${rangeLabel})**\n\nNo active tickets scheduled.`);
   }
 
-  const lines = tickets.map((t) => `• **${t.name}** — ${t.url}`).join("\n");
+  const lines = tickets.map(formatTicketLine).join("\n");
   return reply(`📋 **Your tickets this week (${rangeLabel})**\n\n${lines}`);
+}
+
+//! Same active-status rule as /tickets-list (isActiveStatus), just without
+//! the current-week date filter — every active ticket, dated or not.
+async function resolveTicketsAll(interaction: DiscordInteraction) {
+  const reply = (content: string) => editDeferredReply(interaction.token, content);
+
+  const caller = await resolveCaller(interaction);
+  if (typeof caller === "string") return reply(caller);
+
+  let tickets;
+  try {
+    const tasks = await getFilteredTeamTasks(caller.teamId, [caller.clickupUserId]);
+    tickets = sortTicketsByDate(tasks.filter((t) => isActiveStatus(t.status.status)));
+  } catch {
+    return reply("Couldn't reach ClickUp right now. Try again shortly.");
+  }
+
+  if (tickets.length === 0) {
+    return reply("📋 **All your active tickets**\n\nNo active tickets.");
+  }
+
+  const lines = tickets.map(formatTicketLine).join("\n");
+  return reply(`📋 **All your active tickets**\n\n${lines}`);
 }

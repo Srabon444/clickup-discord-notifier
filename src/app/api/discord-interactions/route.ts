@@ -20,6 +20,10 @@ function ephemeral(content: string) {
   return NextResponse.json({ type: 4, data: { content, flags: 64 } });
 }
 
+//! SUPPRESS_EMBEDS — every ticket line carries its ClickUp URL, and without
+//! this Discord auto-expands each one into a link-preview embed.
+const SUPPRESS_EMBEDS = 1 << 2;
+
 //! Edits the deferred response — the only way to answer once the initial
 //! reply already committed to type 5 (DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE).
 async function editDeferredReply(token: string, content: string) {
@@ -28,7 +32,7 @@ async function editDeferredReply(token: string, content: string) {
   const res = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, flags: SUPPRESS_EMBEDS }),
   });
   //! Discord silently rejects content over its 2000-char limit — without
   //! this check that failure was invisible and the interaction just sat on
@@ -42,7 +46,7 @@ async function postFollowUp(token: string, content: string) {
   const res = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, flags: 64 }),
+    body: JSON.stringify({ content, flags: 64 | SUPPRESS_EMBEDS }),
   });
   if (!res.ok) console.error("Discord follow-up message failed:", res.status, await res.text());
 }

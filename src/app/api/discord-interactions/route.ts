@@ -53,16 +53,29 @@ export async function POST(req: NextRequest) {
     //! 3s — the actual work below (2 Supabase calls + a ClickUp fetch) can
     //! exceed that on a cold start, so acknowledge immediately (type 5) and
     //! do the real work in `after()`, then edit the deferred reply.
-    after(() => resolveTicketsList(interaction));
+    after(() => resolveSafely(interaction, resolveTicketsList));
     return NextResponse.json({ type: 5, data: { flags: 64 } });
   }
 
   if (interaction.type === 2 && interaction.data?.name === COMMAND_NAME_ALL) {
-    after(() => resolveTicketsAll(interaction));
+    after(() => resolveSafely(interaction, resolveTicketsAll));
     return NextResponse.json({ type: 5, data: { flags: 64 } });
   }
 
   return ephemeral("Unknown command.");
+}
+
+//! Without this, any unhandled throw inside a resolve* function (bad
+//! ClickUp/Supabase data shape, a network blip past its own try/catch)
+//! leaves Discord showing "thinking…" forever — the deferred reply never
+//! lands because nothing ever calls editDeferredReply.
+async function resolveSafely(interaction: DiscordInteraction, resolve: (i: DiscordInteraction) => Promise<unknown>) {
+  try {
+    await resolve(interaction);
+  } catch (err) {
+    console.error("Unhandled error resolving interaction:", err);
+    await editDeferredReply(interaction.token, "Something went wrong. Try again shortly.");
+  }
 }
 
 type ResolvedCaller = { clickupUserId: number; teamId: string };

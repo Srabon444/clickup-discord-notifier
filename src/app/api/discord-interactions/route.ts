@@ -25,11 +25,59 @@ function ephemeral(content: string) {
 async function editDeferredReply(token: string, content: string) {
   const applicationId = process.env.DISCORD_APPLICATION_ID;
   if (!applicationId) return;
-  await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, {
+  const res = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
   });
+  //! Discord silently rejects content over its 2000-char limit — without
+  //! this check that failure was invisible and the interaction just sat on
+  //! "thinking…" forever. See replyChunked, which exists to stay under it.
+  if (!res.ok) console.error("Discord deferred-reply edit failed:", res.status, await res.text());
+}
+
+async function postFollowUp(token: string, content: string) {
+  const applicationId = process.env.DISCORD_APPLICATION_ID;
+  if (!applicationId) return;
+  const res = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, flags: 64 }),
+  });
+  if (!res.ok) console.error("Discord follow-up message failed:", res.status, await res.text());
+}
+
+const DISCORD_CONTENT_LIMIT = 2000;
+
+//! Greedily packs blocks (joined by newlines) into chunks that each fit
+//! Discord's 2000-char message limit. A block that alone exceeds the limit
+//! is left oversized rather than split mid-line — not a case that comes up
+//! for a single ticket line in practice.
+function chunkContent(blocks: string[], limit = DISCORD_CONTENT_LIMIT): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  for (const block of blocks) {
+    const candidate = current ? `${current}\n${block}` : block;
+    if (candidate.length > limit && current) {
+      chunks.push(current);
+      current = block;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+//! First chunk edits the deferred reply; the rest post as follow-up
+//! messages. Sent in order, one at a time — these are display order in the
+//! channel, not independent writes, so they can't run concurrently.
+async function replyChunked(token: string, header: string, lines: string[]) {
+  const [first, ...rest] = chunkContent([header, "", ...lines]);
+  await editDeferredReply(token, first);
+  for (const chunk of rest) {
+    await postFollowUp(token, chunk);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -134,8 +182,7 @@ async function resolveTicketsList(interaction: DiscordInteraction) {
     return reply(`📋 **Your tickets this week (${rangeLabel})**\n\nNo active tickets scheduled.`);
   }
 
-  const lines = tickets.map(formatTicketLine).join("\n");
-  return reply(`📋 **Your tickets this week (${rangeLabel})**\n\n${lines}`);
+  return replyChunked(interaction.token, `📋 **Your tickets this week (${rangeLabel})**`, tickets.map(formatTicketLine));
 }
 
 //! Same active-status rule as /tickets-list (isActiveStatus), just without
@@ -158,6 +205,5 @@ async function resolveTicketsAll(interaction: DiscordInteraction) {
     return reply("📋 **All your active tickets**\n\nNo active tickets.");
   }
 
-  const lines = tickets.map(formatTicketLine).join("\n");
-  return reply(`📋 **All your active tickets**\n\n${lines}`);
+  return replyChunked(interaction.token, "📋 **All your active tickets**", tickets.map(formatTicketLine));
 }

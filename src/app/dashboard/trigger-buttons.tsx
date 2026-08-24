@@ -28,7 +28,7 @@ export function TriggerButtons() {
     <div style={{ margin: "1rem 0" }}>
       <h3 style={{ color: "white" }}>Trigger Coverage Notification</h3>
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-        {(["next", "current", "prev"] as const).map((dir) => (
+        {(["prev", "current", "next"] as const).map((dir) => (
           <button
             key={dir}
             onClick={() => trigger(dir)}

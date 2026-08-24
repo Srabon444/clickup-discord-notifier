@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/notify-next-week", "schedule": "0 9 * * 5" }
+  ]
+}

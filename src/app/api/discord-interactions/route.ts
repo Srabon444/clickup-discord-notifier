@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { getFilteredTeamTasks } from "@/lib/clickup-client";
 import { verifyDiscordSignature } from "@/lib/discord-verify";
 import { checkAndIncrementUsage } from "@/lib/rate-limit";
@@ -9,6 +9,7 @@ const COMMAND_NAME = "tickets-list";
 
 type DiscordInteraction = {
   type: number;
+  token: string;
   member?: { user?: { id: string } };
   user?: { id: string };
   data?: { name: string };
@@ -16,6 +17,18 @@ type DiscordInteraction = {
 
 function ephemeral(content: string) {
   return NextResponse.json({ type: 4, data: { content, flags: 64 } });
+}
+
+//! Edits the deferred response — the only way to answer once the initial
+//! reply already committed to type 5 (DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE).
+async function editDeferredReply(token: string, content: string) {
+  const applicationId = process.env.DISCORD_APPLICATION_ID;
+  if (!applicationId) return;
+  await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -35,15 +48,22 @@ export async function POST(req: NextRequest) {
   }
 
   if (interaction.type === 2 && interaction.data?.name === COMMAND_NAME) {
-    return handleTicketsList(interaction);
+    //! Discord kills the interaction if the initial reply isn't sent within
+    //! 3s — the actual work below (2 Supabase calls + a ClickUp fetch) can
+    //! exceed that on a cold start, so acknowledge immediately (type 5) and
+    //! do the real work in `after()`, then edit the deferred reply.
+    after(() => resolveTicketsList(interaction));
+    return NextResponse.json({ type: 5, data: { flags: 64 } });
   }
 
   return ephemeral("Unknown command.");
 }
 
-async function handleTicketsList(interaction: DiscordInteraction) {
+async function resolveTicketsList(interaction: DiscordInteraction) {
+  const reply = (content: string) => editDeferredReply(interaction.token, content);
+
   const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
-  if (!discordUserId) return ephemeral("Couldn't identify you — try again.");
+  if (!discordUserId) return reply("Couldn't identify you — try again.");
 
   const { data: mapping } = await supabaseServer
     .from("clickup_users")
@@ -52,22 +72,22 @@ async function handleTicketsList(interaction: DiscordInteraction) {
     .maybeSingle();
 
   if (!mapping) {
-    return ephemeral("Your Discord account isn't linked to a ClickUp account. Ask an admin to set up the mapping.");
+    return reply("Your Discord account isn't linked to a ClickUp account. Ask an admin to set up the mapping.");
   }
 
   let usage;
   try {
     usage = await checkAndIncrementUsage(discordUserId);
   } catch {
-    return ephemeral("Something went wrong checking your usage limit. Try again shortly.");
+    return reply("Something went wrong checking your usage limit. Try again shortly.");
   }
   //! Rejected here, before any ClickUp call — a spammer never costs an API call.
   if (!usage.allowed) {
-    return ephemeral("⏳ You've hit today's limit (10/day) for this command. Try again tomorrow.");
+    return reply("⏳ You've hit today's limit (10/day) for this command. Try again tomorrow.");
   }
 
   const teamId = process.env.CLICKUP_TEAM_ID;
-  if (!teamId) return ephemeral("Server misconfiguration — missing CLICKUP_TEAM_ID.");
+  if (!teamId) return reply("Server misconfiguration — missing CLICKUP_TEAM_ID.");
 
   const weekdays = currentWeekdays();
   const rangeLabel = `${weekdays[0].date} – ${weekdays[4].date}`;
@@ -77,13 +97,13 @@ async function handleTicketsList(interaction: DiscordInteraction) {
     const tasks = await getFilteredTeamTasks(teamId, [Number(mapping.clickup_user_id)]);
     tickets = tasksCoveringWeek(tasks, weekdays);
   } catch {
-    return ephemeral("Couldn't reach ClickUp right now. Try again shortly.");
+    return reply("Couldn't reach ClickUp right now. Try again shortly.");
   }
 
   if (tickets.length === 0) {
-    return ephemeral(`📋 **Your tickets this week (${rangeLabel})**\n\nNo active tickets scheduled.`);
+    return reply(`📋 **Your tickets this week (${rangeLabel})**\n\nNo active tickets scheduled.`);
   }
 
   const lines = tickets.map((t) => `• **${t.name}** — ${t.url}`).join("\n");
-  return ephemeral(`📋 **Your tickets this week (${rangeLabel})**\n\n${lines}`);
+  return reply(`📋 **Your tickets this week (${rangeLabel})**\n\n${lines}`);
 }

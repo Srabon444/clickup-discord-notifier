@@ -247,12 +247,27 @@ describe("formatTicketLine", () => {
   test("omits the date suffix but keeps the status bracket when neither date is set", () => {
     expect(
       formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null, status: { status: "complete", color: "#008844" } })
-    ).toBe("• **T** — u [🟢 COMPLETE]");
+    ).toBe("• **T** — u [🟩 COMPLETE]");
   });
 
-  test("falls back to a gray dot for a missing or malformed color", () => {
+  test("falls back to a gray dot for a missing or malformed color on an unknown status", () => {
     expect(formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null, status: { status: "custom", color: "not-a-hex" } })).toBe(
       "• **T** — u [⚪ CUSTOM]"
     );
+  });
+
+  test("uses the exact emoji for every known workspace status, case-insensitively", () => {
+    const cases: Array<[string, string]> = [
+      ["In Progress", "🔵"],
+      ["Fix / Amend", "🔴"],
+      ["Ready for Review", "🟠"],
+      ["Ready for Deployment", "🟡"],
+      ["Ready for UAT", "🟢"],
+      ["Complete", "🟩"],
+    ];
+    for (const [status, emoji] of cases) {
+      const line = formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null, status: { status, color: null } });
+      expect(line).toBe(`• **T** — u [${emoji} ${status.toUpperCase()}]`);
+    }
   });
 });

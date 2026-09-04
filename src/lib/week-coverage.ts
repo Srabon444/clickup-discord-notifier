@@ -161,6 +161,19 @@ export function sortTicketsByDate<T extends TicketDisplay>(tickets: T[]): T[] {
   return [...dated, ...undated];
 }
 
+//! Exact mapping for this workspace's known statuses, per the ClickUp status
+//! dropdown colors — "ready for uat" and "complete" are both ClickUp green but
+//! visually distinct there (dark vs light), so they get different emoji
+//! rather than collapsing to the same dot.
+const STATUS_EMOJI_BY_NAME: Record<string, string> = {
+  "in progress": "🔵",
+  "fix / amend": "🔴",
+  "ready for review": "🟠",
+  "ready for deployment": "🟡",
+  "ready for uat": "🟢",
+  complete: "🟩",
+};
+
 const STATUS_COLOR_PALETTE: Array<{ emoji: string; rgb: [number, number, number] }> = [
   { emoji: "🔴", rgb: [237, 28, 36] },
   { emoji: "🟠", rgb: [255, 127, 0] },
@@ -173,10 +186,13 @@ const STATUS_COLOR_PALETTE: Array<{ emoji: string; rgb: [number, number, number]
   { emoji: "⚫", rgb: [35, 35, 35] },
 ];
 
-//! ClickUp gives each status a free-form hex color; Discord message text
-//! can't render arbitrary colors, so bucket to the nearest emoji circle by
-//! RGB distance instead.
-function statusEmoji(color: string | null | undefined): string {
+//! Unlisted statuses fall back to bucketing ClickUp's free-form hex color to
+//! the nearest emoji circle by RGB distance — Discord message text can't
+//! render arbitrary colors directly.
+function statusEmoji(status: string, color: string | null | undefined): string {
+  const byName = STATUS_EMOJI_BY_NAME[status.trim().toLowerCase()];
+  if (byName) return byName;
+
   const hex = color?.replace("#", "");
   if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) return "⚪";
   const rgb: [number, number, number] = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
@@ -191,6 +207,6 @@ export function formatTicketLine(t: TicketDisplay): string {
   const start = t.start_date ? epochToDhakaDate(t.start_date) : null;
   const due = t.due_date ? epochToDhakaDate(t.due_date) : null;
   const dates = start && due ? `${start} → ${due}` : start ? `from ${start}` : due ? `due ${due}` : null;
-  const statusTag = `[${statusEmoji(t.status.color)} ${t.status.status.toUpperCase()}]`;
+  const statusTag = `[${statusEmoji(t.status.status, t.status.color)} ${t.status.status.toUpperCase()}]`;
   return dates ? `• **${t.name}** — ${t.url} ${statusTag} (${dates})` : `• **${t.name}** — ${t.url} ${statusTag}`;
 }

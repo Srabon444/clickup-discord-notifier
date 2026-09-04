@@ -6,6 +6,7 @@ import {
   formatTicketLine,
   isActiveStatus,
   nextWeekdays,
+  prevWeekdays,
   sortTicketsByDate,
   taskCoversDay,
   taskCoversDayForReport,
@@ -134,10 +135,24 @@ describe("currentWeekdays", () => {
     expect(days[0].date).toBe("2026-08-17");
   });
 
-  test("on a Sunday, returns the week that just ended", () => {
+  test("on a Sunday, rolls forward to the upcoming work week", () => {
     // 2026-08-23 is a Sunday in Asia/Dhaka
     const days = currentWeekdays(new Date("2026-08-23T10:00:00Z"));
-    expect(days.map((d) => d.date)).toEqual(["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"]);
+    expect(days.map((d) => d.date)).toEqual(["2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28"]);
+  });
+
+  test("on a Saturday, rolls forward to the upcoming work week", () => {
+    // 2026-08-22 is a Saturday in Asia/Dhaka
+    const days = currentWeekdays(new Date("2026-08-22T10:00:00Z"));
+    expect(days.map((d) => d.date)).toEqual(["2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28"]);
+  });
+});
+
+describe("prevWeekdays / nextWeekdays follow currentWeekdays", () => {
+  test("on a Saturday, next is one week past the rolled-forward current week", () => {
+    const now = new Date("2026-08-22T10:00:00Z"); // Saturday
+    expect(nextWeekdays(now)[0].date).toBe("2026-08-31");
+    expect(prevWeekdays(now)[0].date).toBe("2026-08-17"); // the week that just ended
   });
 });
 
@@ -188,18 +203,20 @@ describe("sortTicketsByDate", () => {
     const c = epoch("2026-08-19");
     const a = epoch("2026-08-17");
     const b = epoch("2026-08-18");
+    const status = { status: "to do" };
     const tickets = [
-      { name: "C", url: "u", start_date: c, due_date: null },
-      { name: "A", url: "u", start_date: a, due_date: null },
-      { name: "B (due only)", url: "u", start_date: null, due_date: b },
+      { name: "C", url: "u", start_date: c, due_date: null, status },
+      { name: "A", url: "u", start_date: a, due_date: null, status },
+      { name: "B (due only)", url: "u", start_date: null, due_date: b, status },
     ];
     expect(sortTicketsByDate(tickets).map((t) => t.name)).toEqual(["A", "B (due only)", "C"]);
   });
 
   test("sinks undated tickets to the bottom, after every dated ticket", () => {
+    const status = { status: "to do" };
     const tickets = [
-      { name: "no date", url: "u", start_date: null, due_date: null },
-      { name: "dated", url: "u", start_date: epoch("2026-08-17"), due_date: null },
+      { name: "no date", url: "u", start_date: null, due_date: null, status },
+      { name: "dated", url: "u", start_date: epoch("2026-08-17"), due_date: null, status },
     ];
     expect(sortTicketsByDate(tickets).map((t) => t.name)).toEqual(["dated", "no date"]);
   });
@@ -212,20 +229,30 @@ describe("formatTicketLine", () => {
       url: "https://app.clickup.com/t/1",
       start_date: epoch("2026-08-17"),
       due_date: epoch("2026-08-19"),
+      status: { status: "in progress", color: "#0072ce" },
     });
-    expect(line).toBe("• **Fix bug** — https://app.clickup.com/t/1 (2026-08-17 → 2026-08-19)");
+    expect(line).toBe("• **Fix bug** — https://app.clickup.com/t/1 [🔵 IN PROGRESS] (2026-08-17 → 2026-08-19)");
   });
 
   test("shows just the one date when only one is set", () => {
+    const status = { status: "to do", color: null };
     expect(
-      formatTicketLine({ name: "T", url: "u", start_date: epoch("2026-08-17"), due_date: null })
-    ).toBe("• **T** — u (from 2026-08-17)");
+      formatTicketLine({ name: "T", url: "u", start_date: epoch("2026-08-17"), due_date: null, status })
+    ).toBe("• **T** — u [⚪ TO DO] (from 2026-08-17)");
     expect(
-      formatTicketLine({ name: "T", url: "u", start_date: null, due_date: epoch("2026-08-19") })
-    ).toBe("• **T** — u (due 2026-08-19)");
+      formatTicketLine({ name: "T", url: "u", start_date: null, due_date: epoch("2026-08-19"), status })
+    ).toBe("• **T** — u [⚪ TO DO] (due 2026-08-19)");
   });
 
-  test("omits the date suffix entirely when neither is set", () => {
-    expect(formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null })).toBe("• **T** — u");
+  test("omits the date suffix but keeps the status bracket when neither date is set", () => {
+    expect(
+      formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null, status: { status: "complete", color: "#008844" } })
+    ).toBe("• **T** — u [🟢 COMPLETE]");
+  });
+
+  test("falls back to a gray dot for a missing or malformed color", () => {
+    expect(formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null, status: { status: "custom", color: "not-a-hex" } })).toBe(
+      "• **T** — u [⚪ CUSTOM]"
+    );
   });
 });

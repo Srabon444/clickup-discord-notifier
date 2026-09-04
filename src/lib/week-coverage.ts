@@ -65,34 +65,37 @@ function todayInDhaka(now: Date): Date {
   return new Date(`${todayDhaka}T00:00:00Z`);
 }
 
-//! Always resolves to a Monday strictly after "now" in Asia/Dhaka — run on a
-//! Monday itself, this still targets next week (not today), so a manual test
-//! run on any day of the week lands on a sensible 5-day window.
-export function nextWeekdays(now: Date = new Date()): Weekday[] {
-  const today = todayInDhaka(now);
-  const daysUntilMonday = ((1 - today.getUTCDay() + 7) % 7) || 7;
-  const monday = new Date(today);
-  monday.setUTCDate(monday.getUTCDate() + daysUntilMonday);
-  return weekdaysFrom(monday);
-}
-
-//! The Monday of the current week — may be in the past relative to "now"
-//! (e.g. run on a Thursday, Monday/Tuesday/Wednesday are already gone) —
-//! the full Mon-Fri window is still returned, not just the remaining days.
+//! The Monday of the current work week. On Sat/Sun this rolls forward to the
+//! upcoming Mon-Fri instead of the week that just ended — the weekend
+//! "belongs" to next week's planning, not last week's. Mon-Fri still returns
+//! the full window even for already-past days (e.g. Thursday still shows Mon).
 export function currentWeekdays(now: Date = new Date()): Weekday[] {
   const today = todayInDhaka(now);
-  const daysSinceMonday = (today.getUTCDay() + 6) % 7;
+  const dow = today.getUTCDay(); // 0=Sun..6=Sat
   const monday = new Date(today);
-  monday.setUTCDate(monday.getUTCDate() - daysSinceMonday);
+  if (dow === 0 || dow === 6) {
+    monday.setUTCDate(monday.getUTCDate() + (dow === 6 ? 2 : 1));
+  } else {
+    monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
+  }
   return weekdaysFrom(monday);
 }
 
-//! The Monday of the week before the current week.
+//! Always one week after currentWeekdays's Monday — so on a weekend, "next"
+//! is the week after the one "current" already rolled forward to.
+export function nextWeekdays(now: Date = new Date()): Weekday[] {
+  const current = currentWeekdays(now);
+  const monday = new Date(`${current[0].date}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() + 7);
+  return weekdaysFrom(monday);
+}
+
+//! Always one week before currentWeekdays's Monday.
 export function prevWeekdays(now: Date = new Date()): Weekday[] {
   const current = currentWeekdays(now);
-  const prevMonday = new Date(`${current[0].date}T00:00:00Z`);
-  prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
-  return weekdaysFrom(prevMonday);
+  const monday = new Date(`${current[0].date}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() - 7);
+  return weekdaysFrom(monday);
 }
 
 export function weekdaysByDirection(direction: "next" | "current" | "prev", now: Date = new Date()): Weekday[] {
@@ -145,6 +148,7 @@ export type TicketDisplay = {
   url: string;
   start_date: string | null;
   due_date: string | null;
+  status: { status: string; color?: string | null };
 };
 
 //! Sorted by start_date; a task with only a due_date sorts by that instead
@@ -157,9 +161,36 @@ export function sortTicketsByDate<T extends TicketDisplay>(tickets: T[]): T[] {
   return [...dated, ...undated];
 }
 
+const STATUS_COLOR_PALETTE: Array<{ emoji: string; rgb: [number, number, number] }> = [
+  { emoji: "🔴", rgb: [237, 28, 36] },
+  { emoji: "🟠", rgb: [255, 127, 0] },
+  { emoji: "🟡", rgb: [255, 221, 0] },
+  { emoji: "🟢", rgb: [0, 166, 81] },
+  { emoji: "🔵", rgb: [0, 114, 206] },
+  { emoji: "🟣", rgb: [146, 39, 143] },
+  { emoji: "🟤", rgb: [139, 69, 19] },
+  { emoji: "⚪", rgb: [220, 220, 220] },
+  { emoji: "⚫", rgb: [35, 35, 35] },
+];
+
+//! ClickUp gives each status a free-form hex color; Discord message text
+//! can't render arbitrary colors, so bucket to the nearest emoji circle by
+//! RGB distance instead.
+function statusEmoji(color: string | null | undefined): string {
+  const hex = color?.replace("#", "");
+  if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) return "⚪";
+  const rgb: [number, number, number] = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+  return STATUS_COLOR_PALETTE.reduce((best, c) => {
+    const dist = (rgb[0] - c.rgb[0]) ** 2 + (rgb[1] - c.rgb[1]) ** 2 + (rgb[2] - c.rgb[2]) ** 2;
+    const bestDist = (rgb[0] - best.rgb[0]) ** 2 + (rgb[1] - best.rgb[1]) ** 2 + (rgb[2] - best.rgb[2]) ** 2;
+    return dist < bestDist ? c : best;
+  }).emoji;
+}
+
 export function formatTicketLine(t: TicketDisplay): string {
   const start = t.start_date ? epochToDhakaDate(t.start_date) : null;
   const due = t.due_date ? epochToDhakaDate(t.due_date) : null;
   const dates = start && due ? `${start} → ${due}` : start ? `from ${start}` : due ? `due ${due}` : null;
-  return dates ? `• **${t.name}** — ${t.url} (${dates})` : `• **${t.name}** — ${t.url}`;
+  const statusTag = `[${statusEmoji(t.status.color)} ${t.status.status.toUpperCase()}]`;
+  return dates ? `• **${t.name}** — ${t.url} ${statusTag} (${dates})` : `• **${t.name}** — ${t.url} ${statusTag}`;
 }

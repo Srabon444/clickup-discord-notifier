@@ -33,7 +33,7 @@ export type ClickupTaskWithDates = {
   url: string;
   start_date: string | null;
   due_date: string | null;
-  status: { status: string; type: string };
+  status: { status: string; type: string; color?: string };
   assignees: Array<{ id: number; username: string; email: string }>;
 };
 

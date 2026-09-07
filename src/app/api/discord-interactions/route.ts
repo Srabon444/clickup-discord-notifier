@@ -1,6 +1,7 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { getFilteredTeamTasks } from "@/lib/clickup-client";
 import { verifyDiscordSignature } from "@/lib/discord-verify";
+import { parseCommandTarget, type InteractionData } from "@/lib/interaction-target";
 import { checkAndIncrementUsage } from "@/lib/rate-limit";
 import { supabaseServer } from "@/lib/supabase-server";
 import { currentWeekdays, formatTicketLine, isActiveStatus, sortTicketsByDate, tasksCoveringWeek } from "@/lib/week-coverage";
@@ -13,7 +14,7 @@ type DiscordInteraction = {
   token: string;
   member?: { user?: { id: string } };
   user?: { id: string };
-  data?: { name: string };
+  data?: InteractionData;
 };
 
 function ephemeral(content: string) {
@@ -130,22 +131,45 @@ async function resolveSafely(interaction: DiscordInteraction, resolve: (i: Disco
   }
 }
 
-type ResolvedCaller = { clickupUserId: number; teamId: string };
+//! `who` is the possessive used in the reply header — "Your" for the caller,
+//! "Rafi's" when the optional `user` option pointed at someone else.
+type ResolvedCaller = { clickupUserId: number; teamId: string; who: string };
 
-//! Shared by both commands: identify the caller, enforce the daily usage
-//! cap, and check server config — before either command touches ClickUp.
-async function resolveCaller(interaction: DiscordInteraction): Promise<ResolvedCaller | string> {
-  const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
-  if (!discordUserId) return "Couldn't identify you — try again.";
-
-  const { data: mapping } = await supabaseServer
+async function clickupIdFor(discordUserId: string): Promise<number | null> {
+  const { data } = await supabaseServer
     .from("clickup_users")
     .select("clickup_user_id")
     .eq("discord_user_id", discordUserId)
     .maybeSingle();
+  return data ? Number(data.clickup_user_id) : null;
+}
 
-  if (!mapping) {
+//! Shared by both commands: identify the caller, resolve whose tickets were
+//! asked for, enforce the daily usage cap, and check server config — before
+//! either command touches ClickUp.
+async function resolveCaller(interaction: DiscordInteraction): Promise<ResolvedCaller | string> {
+  const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
+  if (!discordUserId) return "Couldn't identify you — try again.";
+
+  const callerClickupId = await clickupIdFor(discordUserId);
+  if (callerClickupId === null) {
     return "Your Discord account isn't linked to a ClickUp account. Ask an admin to set up the mapping.";
+  }
+
+  //! Anyone can look up anyone — deliberately open, no role gate. Resolved
+  //! BEFORE the usage counter below, so naming an unlinked person never burns
+  //! one of the caller's daily uses.
+  const target = parseCommandTarget(interaction.data);
+  let clickupUserId = callerClickupId;
+  let who = "Your";
+
+  if (target && target.discordUserId !== discordUserId) {
+    const targetClickupId = await clickupIdFor(target.discordUserId);
+    if (targetClickupId === null) {
+      return `${target.displayName} isn't linked to a ClickUp account. Ask an admin to set up the mapping.`;
+    }
+    clickupUserId = targetClickupId;
+    who = `${target.displayName}'s`;
   }
 
   let usage;
@@ -162,7 +186,7 @@ async function resolveCaller(interaction: DiscordInteraction): Promise<ResolvedC
   const teamId = process.env.CLICKUP_TEAM_ID;
   if (!teamId) return "Server misconfiguration — missing CLICKUP_TEAM_ID.";
 
-  return { clickupUserId: Number(mapping.clickup_user_id), teamId };
+  return { clickupUserId, teamId, who };
 }
 
 async function resolveTicketsList(interaction: DiscordInteraction) {
@@ -182,11 +206,13 @@ async function resolveTicketsList(interaction: DiscordInteraction) {
     return reply("Couldn't reach ClickUp right now. Try again shortly.");
   }
 
+  const header = `📋 **${caller.who} tickets this week (${rangeLabel})**`;
+
   if (tickets.length === 0) {
-    return reply(`📋 **Your tickets this week (${rangeLabel})**\n\nNo active tickets scheduled.`);
+    return reply(`${header}\n\nNo active tickets scheduled.`);
   }
 
-  return replyChunked(interaction.token, `📋 **Your tickets this week (${rangeLabel})**`, tickets.map(formatTicketLine));
+  return replyChunked(interaction.token, header, tickets.map(formatTicketLine));
 }
 
 //! Same active-status rule as /tickets-list (isActiveStatus), just without
@@ -205,9 +231,11 @@ async function resolveTicketsAll(interaction: DiscordInteraction) {
     return reply("Couldn't reach ClickUp right now. Try again shortly.");
   }
 
+  const header = `📋 **All ${caller.who === "Your" ? "your" : caller.who} active tickets**`;
+
   if (tickets.length === 0) {
-    return reply("📋 **All your active tickets**\n\nNo active tickets.");
+    return reply(`${header}\n\nNo active tickets.`);
   }
 
-  return replyChunked(interaction.token, "📋 **All your active tickets**", tickets.map(formatTicketLine));
+  return replyChunked(interaction.token, header, tickets.map(formatTicketLine));
 }

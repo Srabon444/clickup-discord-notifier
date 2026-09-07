@@ -9,13 +9,24 @@ if (!appId || !guildId || !botToken) {
   process.exit(1);
 }
 
+//! Type 6 is USER — Discord renders its own member picker with typeahead, so
+//! no autocomplete handler is needed on our side. Optional: a bare
+//! /tickets-list still answers about the caller.
+const USER_OPTION = {
+  name: "user",
+  description: "Whose tickets to show — leave empty for your own",
+  type: 6,
+  required: false,
+};
+
 const commands = [
-  { name: "tickets-list", description: "See your active tickets for this week (Mon-Fri)", type: 1 },
-  { name: "tickets-all", description: "See all your active tickets, dated or not", type: 1 },
+  { name: "tickets-list", description: "See active tickets for this week (Mon-Fri)", type: 1, options: [USER_OPTION] },
+  { name: "tickets-all", description: "See all active tickets, dated or not", type: 1, options: [USER_OPTION] },
 ];
 
 //! Guild-scoped (not global) registration — propagates instantly, global
-//! commands can take up to an hour to show up.
+//! commands can take up to an hour to show up. Posting an existing name
+//! updates that command in place, so re-running this is safe.
 for (const command of commands) {
   const res = await fetch(`https://discord.com/api/v10/applications/${appId}/guilds/${guildId}/commands`, {
     method: "POST",

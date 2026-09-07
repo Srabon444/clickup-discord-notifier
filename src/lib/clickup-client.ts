@@ -6,11 +6,34 @@ function authHeaders() {
   return { Authorization: token };
 }
 
+const RATE_LIMIT_RETRIES = 2;
+const MAX_RETRY_WAIT_MS = 5000;
+
+//! ClickUp allows ~100 requests/minute per token; one coverage trigger spends
+//! ~20 on task pages alone, so Prev/Current/Next in a row does 429 — measured,
+//! and it killed the whole report.
+// ponytail: two short retries, no jitter or shared budget — enough for
+// back-to-back dashboard clicks; a real limiter only if this still 429s.
+async function clickupFetch(url: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: authHeaders() });
+    if (res.status !== 429 || attempt === RATE_LIMIT_RETRIES) return res;
+    //! `Number(h) || 5` would stall 5s on a valid "retry-after: 0", and
+    //! Number(null) is 0, which would busy-retry with no header at all.
+    const header = res.headers.get("retry-after");
+    const seconds = header === null ? NaN : Number(header);
+    const retryAfterMs = (Number.isFinite(seconds) && seconds >= 0 ? seconds : 5) * 1000;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfterMs, MAX_RETRY_WAIT_MS)));
+  }
+}
+
 export type ClickupTask = {
   id: string;
   name: string;
   url: string;
   assignees: Array<{ id: number; username: string; email: string }>;
+  //* Only populated when getTask is called with includeSubtasks
+  subtasks?: Array<{ id: string }>;
 };
 
 export type ClickupWebhook = {
@@ -31,6 +54,8 @@ export type ClickupTaskWithDates = {
   id: string;
   name: string;
   url: string;
+  //* Set only on subtasks — the id of the task this one hangs under
+  parent: string | null;
   start_date: string | null;
   due_date: string | null;
   status: { status: string; type: string; color?: string };
@@ -42,10 +67,12 @@ export type ClickupTaskWithDates = {
 //! endpoint — this manages our own subscription, it never touches a task,
 //! comment, or assignee. Never add a call that writes one — see the
 //! read-only-guard test next to this file.
-export async function getTask(taskId: string): Promise<ClickupTask> {
-  const res = await fetch(`${CLICKUP_API}/task/${taskId}`, {
-    headers: authHeaders(),
-  });
+//! include_subtasks is the only way to learn whether a task has children —
+//! the team task-list endpoint returns each task's `parent` but never a child
+//! list, and its assignees[] filter hides subtasks assigned to someone else.
+export async function getTask(taskId: string, includeSubtasks = false): Promise<ClickupTask> {
+  const query = includeSubtasks ? "?include_subtasks=true" : "";
+  const res = await clickupFetch(`${CLICKUP_API}/task/${taskId}${query}`);
   if (!res.ok) {
     throw new Error(`ClickUp getTask(${taskId}) failed: ${res.status}`);
   }
@@ -53,9 +80,7 @@ export async function getTask(taskId: string): Promise<ClickupTask> {
 }
 
 export async function getTeamMembers(teamId: string): Promise<ClickupMember[]> {
-  const res = await fetch(`${CLICKUP_API}/team`, {
-    headers: authHeaders(),
-  });
+  const res = await clickupFetch(`${CLICKUP_API}/team`);
   if (!res.ok) {
     throw new Error(`ClickUp getTeamMembers failed: ${res.status}`);
   }
@@ -90,9 +115,7 @@ export async function getFilteredTeamTasks(
     const params = new URLSearchParams({ include_closed: "true", subtasks: "true", page: String(page) });
     for (const id of assigneeIds) params.append("assignees[]", String(id));
 
-    const res = await fetch(`${CLICKUP_API}/team/${teamId}/task?${params}`, {
-      headers: authHeaders(),
-    });
+    const res = await clickupFetch(`${CLICKUP_API}/team/${teamId}/task?${params}`);
     if (!res.ok) {
       throw new Error(`ClickUp getFilteredTeamTasks failed: ${res.status}`);
     }

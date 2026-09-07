@@ -1,4 +1,4 @@
-import { supabaseServer } from "./supabase-server";
+import { supabaseServer } from "./supabase-server.ts";
 
 // Discord id lives in the clickup_users table (see supabase/002_clickup_users.sql),
 // kept in sync with ClickUp via scripts/sync-clickup-users.ts. The

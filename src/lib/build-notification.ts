@@ -1,5 +1,5 @@
-import type { DiscordEmbed } from "./discord";
-import { statusEmoji } from "./status-emoji";
+import type { DiscordEmbed } from "./discord.ts";
+import { statusEmoji } from "./status-emoji.ts";
 
 export type ClickupUser = {
   id: number;

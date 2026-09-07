@@ -1,4 +1,4 @@
-import { supabaseServer } from "./supabase-server";
+import { supabaseServer } from "./supabase-server.ts";
 
 const DAILY_LIMIT = 10;
 const DHAKA_TZ = "Asia/Dhaka";

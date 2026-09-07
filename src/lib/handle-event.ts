@@ -1,5 +1,5 @@
-import { getTask } from "./clickup-client";
-import { postToDiscord } from "./discord";
+import { getTask } from "./clickup-client.ts";
+import { postToDiscord } from "./discord.ts";
 import {
   buildAssigneeEmbed,
   buildCommentEmbed,
@@ -10,9 +10,9 @@ import {
   findStatusChange,
   type ClickupWebhookPayload,
 } from "./build-notification";
-import type { DiscordEmbed } from "./discord";
-import { supabaseServer } from "./supabase-server";
-import { getDiscordMention } from "./user-mapping";
+import type { DiscordEmbed } from "./discord.ts";
+import { supabaseServer } from "./supabase-server.ts";
+import { getDiscordMention } from "./user-mapping.ts";
 
 export async function handleClickupEvent(payload: ClickupWebhookPayload): Promise<void> {
   const dedupeKey = buildDedupeKey(payload);

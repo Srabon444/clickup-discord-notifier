@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   buildMemberCoverage,
   currentWeekdays,
+  excludeParentTasks,
+  parentIdsFromTasks,
   formatDayLines,
   formatTicketLine,
   isActiveStatus,
@@ -269,5 +271,35 @@ describe("formatTicketLine", () => {
       const line = formatTicketLine({ name: "T", url: "u", start_date: null, due_date: null, status: { status, color: null } });
       expect(line).toBe(`• **T** — u [${emoji} ${status.toUpperCase()}]`);
     }
+  });
+});
+
+describe("parent-ticket exclusion", () => {
+  const tasks = [
+    { id: "leaf", parent: null },
+    { id: "umbrella", parent: null },
+    { id: "child", parent: "umbrella" },
+    { id: "midlevel", parent: "umbrella" },
+    { id: "grandchild", parent: "midlevel" },
+  ];
+
+  test("free pre-pass finds every id some task points at as its parent", () => {
+    expect(parentIdsFromTasks(tasks)).toEqual(new Set(["umbrella", "midlevel"]));
+  });
+
+  test("drops parents at every level, keeps leaves", () => {
+    const kept = excludeParentTasks(tasks, parentIdsFromTasks(tasks)).map((t) => t.id);
+    expect(kept).toEqual(["leaf", "child", "grandchild"]);
+  });
+
+  test("a parent whose only subtask is invisible to the fetch still drops once resolved via the API", () => {
+    //! The pre-pass can't see it — this is the case getTask(id, true) covers.
+    const hidden = [{ id: "umbrella", parent: null }];
+    expect(parentIdsFromTasks(hidden).has("umbrella")).toBe(false);
+    expect(excludeParentTasks(hidden, new Set(["umbrella"]))).toEqual([]);
+  });
+
+  test("keeps everything when no parent ids are supplied (includeParent path)", () => {
+    expect(excludeParentTasks(tasks, new Set()).map((t) => t.id)).toEqual(tasks.map((t) => t.id));
   });
 });

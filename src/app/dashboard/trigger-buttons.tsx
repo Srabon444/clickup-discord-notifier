@@ -4,6 +4,9 @@ import { useState } from "react";
 
 export function TriggerButtons() {
   const [loading, setLoading] = useState<"next" | "current" | "prev" | null>(null);
+  //? Not persisted on purpose — a remembered checkbox would quietly post the
+  //? other report on the next page load.
+  const [includeParent, setIncludeParent] = useState(false);
   const [result, setResult] = useState<{ direction: string; message: string; membersShown: number; membersWithGap: number } | null>(null);
 
   const trigger = async (direction: "next" | "current" | "prev") => {
@@ -13,7 +16,7 @@ export function TriggerButtons() {
       const res = await fetch("/api/trigger-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ direction }),
+        body: JSON.stringify({ direction, includeParent }),
       });
       const data = await res.json();
       setResult({ direction, ...data });
@@ -27,6 +30,18 @@ export function TriggerButtons() {
   return (
     <div style={{ margin: "1rem 0" }}>
       <h3 style={{ color: "white" }}>Trigger Coverage Notification</h3>
+      <label style={{ color: "white", display: "inline-flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.75rem" }}>
+        <input
+          type="checkbox"
+          checked={includeParent}
+          onChange={(e) => setIncludeParent(e.target.checked)}
+          disabled={loading !== null}
+        />
+        Include parent
+        <span style={{ opacity: 0.6, fontSize: "0.85em" }}>
+          (off: a ticket with subtasks doesn&apos;t count for whoever is assigned to the parent)
+        </span>
+      </label>
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         {(["prev", "current", "next"] as const).map((dir) => (
           <button

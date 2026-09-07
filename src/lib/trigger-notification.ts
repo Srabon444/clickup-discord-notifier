@@ -1,14 +1,63 @@
-import { getFilteredTeamTasks, getTeamMembers } from "./clickup-client";
-import { postToDiscord } from "./discord";
-import { supabaseServer } from "./supabase-server";
-import { buildMemberCoverage, formatDayLines, weekdaysByDirection } from "./week-coverage";
+import { getFilteredTeamTasks, getTask, getTeamMembers, type ClickupTaskWithDates } from "./clickup-client.ts";
+import { postToDiscord } from "./discord.ts";
+import { supabaseServer } from "./supabase-server.ts";
+import {
+  buildMemberCoverage,
+  excludeParentTasks,
+  formatDayLines,
+  parentIdsFromTasks,
+  taskCoversDayForReport,
+  weekdaysByDirection,
+  type Weekday,
+} from "./week-coverage.ts";
 
 const BOT_USERNAME = "Captain Ticket";
 const BOT_AVATAR_URL = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/1f3ab.png";
 const LEGEND = "✅ = active ticket   ·   ❌ = nothing scheduled";
 
+const SUBTASK_CHECK_CONCURRENCY = 20;
+
+//! Only tasks that actually cover a day in this window can change anyone's
+//! ✅/❌, so nothing else is worth an API call. Tasks already known to be
+//! parents from the free pre-pass are skipped too.
+async function resolveParentIds(tasks: ClickupTaskWithDates[], weekdays: Weekday[]): Promise<Set<string>> {
+  const parentIds = parentIdsFromTasks(tasks);
+  const candidates = [
+    ...new Set(
+      tasks
+        .filter((t) => !parentIds.has(t.id) && weekdays.some((w) => taskCoversDayForReport(t, w.date)))
+        .map((t) => t.id)
+    ),
+  ];
+
+  //! Chunked instead of one big Promise.all — ClickUp's token limit is around
+  //! 100 requests/minute and a busy week can produce more candidates than that.
+  // ponytail: fixed chunk size, no backoff — swap for a real rate-limited
+  // queue only if this starts hitting 429s.
+  for (let i = 0; i < candidates.length; i += SUBTASK_CHECK_CONCURRENCY) {
+    const chunk = candidates.slice(i, i + SUBTASK_CHECK_CONCURRENCY);
+    const found = await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          const full = await getTask(id, true);
+          return full.subtasks?.length ? id : null;
+        } catch (error) {
+          //! A failed lookup falls back to treating the task as a leaf (it
+          //! counts) — one API hiccup shouldn't turn someone's day red.
+          console.error(`[NOTIFY] subtask check failed for ${id}:`, error);
+          return null;
+        }
+      })
+    );
+    for (const id of found) if (id) parentIds.add(id);
+  }
+
+  return parentIds;
+}
+
 export async function triggerNotification(
-  direction: "next" | "current" | "prev" = "next"
+  direction: "next" | "current" | "prev" = "next",
+  includeParent = false
 ): Promise<{ success: boolean; message: string; membersShown: number; membersWithGap: number }> {
   const teamId = process.env.CLICKUP_TEAM_ID;
   const webhookUrl = process.env.DISCORD_WEEKLY_WEBHOOK_URL;
@@ -57,10 +106,15 @@ export async function triggerNotification(
       mappedMembers.map((m) => m.id)
     );
 
+    //! Default: a ticket with subtasks doesn't count for whoever is assigned
+    //! to it — only leaf tickets do. Sitting on the umbrella while the
+    //! subtasks belong to someone else is a gap, so that day goes ❌.
+    const coverageTasks = includeParent ? tasks : excludeParentTasks(tasks, await resolveParentIds(tasks, weekdays));
+
     const coverage = mappedMembers.map((member) =>
       buildMemberCoverage(
         member,
-        tasks.filter((t) => t.assignees.some((a) => a.id === member.id)),
+        coverageTasks.filter((t) => t.assignees.some((a) => a.id === member.id)),
         weekdays
       )
     );
@@ -69,7 +123,10 @@ export async function triggerNotification(
       (sortKeyByDiscordId.get(a.discordUserId) ?? "").localeCompare(sortKeyByDiscordId.get(b.discordUserId) ?? "")
     );
 
-    const header = `🗓️ **${directionLabel}'s ticket coverage — ${rangeLabel}**\n\n${LEGEND}`;
+    //? The two modes render identically otherwise — nobody reading Discord
+    //? could tell which rule produced the report.
+    const modeNote = includeParent ? "\n_Parent tickets included._" : "";
+    const header = `🗓️ **${directionLabel}'s ticket coverage — ${rangeLabel}**\n\n${LEGEND}${modeNote}`;
     const body = sorted.map((c) => `<@${c.discordUserId}>\n${formatDayLines(c.days)}`).join("\n\n");
 
     console.log("[NOTIFY] Posting to webhook:", webhookUrl?.substring(0, 50) + "...");

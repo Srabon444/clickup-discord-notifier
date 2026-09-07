@@ -1,4 +1,4 @@
-import { statusEmoji } from "./status-emoji";
+import { statusEmoji } from "./status-emoji.ts";
 
 const DHAKA_TZ = "Asia/Dhaka";
 
@@ -170,4 +170,20 @@ export function formatTicketLine(t: TicketDisplay): string {
   const dates = start && due ? `${start} → ${due}` : start ? `from ${start}` : due ? `due ${due}` : null;
   const statusTag = `[${statusEmoji(t.status.status, t.status.color)} ${t.status.status.toUpperCase()}]`;
   return dates ? `• **${t.name}** — ${t.url} ${statusTag} (${dates})` : `• **${t.name}** — ${t.url} ${statusTag}`;
+}
+
+export type ParentAware = { id: string; parent?: string | null };
+
+//! Free pre-pass: any id a fetched task names as its `parent` is provably an
+//! umbrella. Misses parents whose only subtasks fall outside the fetched set —
+//! the caller resolves those via getTask with include_subtasks.
+export function parentIdsFromTasks<T extends ParentAware>(tasks: T[]): Set<string> {
+  return new Set(tasks.map((t) => t.parent).filter((p): p is string => Boolean(p)));
+}
+
+//! A task with subtasks is an umbrella — the work sits on its children, so
+//! the parent alone covers no day. A task with no subtasks IS the work and
+//! always counts. Applies at every level, mid-level subtasks included.
+export function excludeParentTasks<T extends ParentAware>(tasks: T[], parentIds: Set<string>): T[] {
+  return tasks.filter((t) => !parentIds.has(t.id));
 }

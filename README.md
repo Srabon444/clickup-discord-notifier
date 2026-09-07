@@ -21,10 +21,14 @@ platform, fully custom code.
 - Every Friday at 3pm Dhaka time, **Captain Ticket** posts a coverage report
   to a separate Discord channel: any team member with a gap somewhere in
   next Monday–Friday (no active ticket's start/due range covering that day)
-  gets @mentioned, with a ✅/❌ per day
+  gets @mentioned, with a ✅/❌ per day. A ticket that has subtasks doesn't
+  count for whoever is assigned to it — only leaf tickets do, so sitting on
+  an umbrella parent while the subtasks belong to someone else is a gap. The
+  dashboard's **Include parent** checkbox turns that rule off per trigger
 - `/tickets-list` slash command: any linked member can privately (ephemeral)
-  check their own active tickets for the current Mon–Fri, rate-limited to
-  3 uses/day per person — rejected requests never call ClickUp
+  check active tickets for the current Mon–Fri — their own, or anyone else's
+  via the optional `user:` option (Discord's own member picker). Rate-limited
+  per caller — rejected requests never call ClickUp
 
 ## How it works
 
@@ -67,6 +71,7 @@ npm run dev
 | `npm run sync-clickup-users` | pull ClickUp members into Supabase |
 | `npm run check-webhook-health` | manually run the watchdog check |
 | `npm run notify-unassigned-week next` | coverage check for next week (default) |
+| `npm run notify-unassigned-week next -- --include-parent` | same, but count tickets that have subtasks too |
 | `npm run notify-unassigned-week current` | coverage check for current week |
 | `npm run notify-unassigned-week prev` | coverage check for previous week |
 | `npm run register-slash-command` | register `/tickets-list` with Discord for `DISCORD_GUILD_ID` |

@@ -3,7 +3,8 @@
 import { useState } from "react";
 
 export function TriggerButtons() {
-  const [loading, setLoading] = useState<"next" | "current" | "prev" | null>(null);
+  const [loading, setLoading] = useState<"next" | "current" | "prev" | "backup" | null>(null);
+  const [backupResult, setBackupResult] = useState<{ ok: boolean; message: string } | null>(null);
   //? Not persisted on purpose — a remembered checkbox would quietly post the
   //? other report on the next page load.
   const [includeParent, setIncludeParent] = useState(false);
@@ -22,6 +23,29 @@ export function TriggerButtons() {
       setResult({ direction, ...data });
     } catch (error) {
       setResult({ direction, message: `Error: ${error instanceof Error ? error.message : "Unknown error"}`, membersShown: 0, membersWithGap: 0 });
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const triggerBackup = async () => {
+    setLoading("backup");
+    setBackupResult(null);
+    try {
+      const res = await fetch("/api/backup-trigger", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 202) {
+        setBackupResult({ ok: true, message: "Backup started. The Discord link arrives in 1-2 minutes." });
+      } else if (res.status === 409) {
+        setBackupResult({ ok: false, message: "A backup is already running." });
+      } else if (res.status === 429) {
+        const minutes = Math.ceil((Number(data.retryAfterSec) || 60) / 60);
+        setBackupResult({ ok: false, message: `Cooldown active. Try again in ${minutes} min.` });
+      } else {
+        setBackupResult({ ok: false, message: `Failed: ${data.error ?? res.status}` });
+      }
+    } catch (error) {
+      setBackupResult({ ok: false, message: `Failed: ${error instanceof Error ? error.message : "Unknown error"}` });
     } finally {
       setLoading(null);
     }
@@ -60,7 +84,39 @@ export function TriggerButtons() {
             {loading === dir ? "Posting..." : `${dir === "next" ? "Next" : dir === "current" ? "Current" : "Prev"} Week`}
           </button>
         ))}
+        <button
+          onClick={triggerBackup}
+          disabled={loading !== null}
+          style={{
+            marginLeft: "auto",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            padding: "0.5rem 1rem",
+            backgroundColor: loading === "backup" ? "#a71d2a" : "#dc3545",
+            color: "white",
+            border: "none",
+            cursor: loading === "backup" ? "not-allowed" : "pointer",
+            opacity: loading === "backup" ? 0.6 : 1,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <ellipse cx="12" cy="5" rx="8" ry="3" />
+            <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+            <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+          </svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+          </svg>
+          {loading === "backup" ? "Starting..." : "Backup & Notify"}
+        </button>
       </div>
+      {backupResult && (
+        <div style={{ marginTop: "1rem", color: backupResult.ok ? "#51cf66" : "#ff6b6b" }}>
+          <strong>Backup:</strong> {backupResult.message}
+        </div>
+      )}
       {result && (
         <div style={{ marginTop: "1rem", color: result.message.includes("Error") ? "#ff6b6b" : "#51cf66" }}>
           <strong>{result.direction === "next" ? "Next" : result.direction === "current" ? "Current" : "Prev"} week:</strong> {result.message}
